@@ -5,24 +5,26 @@ const crypto = require('node:crypto');
 const { fingerprintVersion } = require('../automation/fingerprint/generation');
 const allocations = new WeakMap();
 
-function allocationProof(engine, id, seed) {
+function allocationProof(engine, id, seed, version) {
   if (!allocations.has(engine)) allocations.set(engine, { key: crypto.randomBytes(32), consumed: new Set() });
-  return crypto.createHmac('sha256', allocations.get(engine).key).update(id).update('\0').update(seed).digest('hex');
+  return crypto.createHmac('sha256', allocations.get(engine).key)
+    .update(id).update('\0').update(seed).update('\0').update(String(version)).digest('hex');
 }
 
 function previewIdentity(engine, profile) {
   return { profileId: profile.id, seed: profile.fingerprintSeed, version: profile.fingerprintVersion,
-    allocation: allocationProof(engine, profile.id, profile.fingerprintSeed) };
+    allocation: allocationProof(engine, profile.id, profile.fingerprintSeed, profile.fingerprintVersion) };
 }
 
 function hasAllocationProof(engine, draft) {
-  const { profileId: id, seed, allocation } = draft || {};
+  const { profileId: id, seed, version, allocation } = draft || {};
   return typeof id === 'string'
     && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(id)
     && typeof seed === 'string' && /^[a-f0-9]{32}$/.test(seed)
+    && Number.isSafeInteger(version)
     && typeof allocation === 'string' && /^[a-f0-9]{64}$/.test(allocation)
     && allocations.has(engine)
-    && crypto.timingSafeEqual(Buffer.from(allocation, 'hex'), Buffer.from(allocationProof(engine, id, seed), 'hex'));
+    && crypto.timingSafeEqual(Buffer.from(allocation, 'hex'), Buffer.from(allocationProof(engine, id, seed, version), 'hex'));
 }
 
 function reusePreviewIdentity(engine, draft, edited) {

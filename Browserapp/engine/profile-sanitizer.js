@@ -5,7 +5,8 @@ const { normalizeIpLookupChannel } = require('../network/proxy-config');
 const { isNoCredentialProxy } = require('../shared/proxy-redact');
 const { profileProxyAssociation, normalizedProxyAssociationId } = require("./proxy-helpers");
 const { normalizeCoordinates, normalizeGeolocationAccuracy, resolveDoNotTrackMode, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions,
-  normalizeHardwareConcurrency, normalizeDeviceMemory, normalizeStabilitySettings, toFiniteNumber: finite } = require("../shared/profile-values");
+  normalizeHardwareConcurrency, normalizeDeviceMemory, normalizeStabilitySettings,
+  DEVICE_MEMORY_TIERS, toFiniteNumber: finite } = require("../shared/profile-values");
 const { normalizeLanguageTags } = require('../automation/locale-from-country');
 
 const { fingerprintVersion } = require("../automation/fingerprint/generation");
@@ -52,11 +53,11 @@ function sanitizeProfile(value) {
   const memoryCandidate = privacyValue.memory === "" || privacyValue.memory === null || privacyValue.memory === undefined
     ? fingerprintValue?.memory
     : privacyValue.memory;
-  const cores = parseLimitedOption(cpuCandidate, [0, 2, 4, 6, 8, 10, 12, 16, 20, 24]);
+  const cores = finite(cpuCandidate) === 0 ? 0 : normalizeHardwareConcurrency(cpuCandidate);
   // navigator.deviceMemory is spec-quantised (0.25/0.5/1/2/4/8) and capped at 8;
   // 16 was briefly accepted during the RoxyBrowser parity sweep but no real Chrome
   // reports it — a single read identifies the profile as spoofed. Keep the cap at 8.
-  const memory = parseLimitedOption(memoryCandidate, [0, 2, 4, 6, 8]);
+  const memory = parseLimitedOption(memoryCandidate, [0, ...DEVICE_MEMORY_TIERS, 6]);
   // Accept the same switch list after a save/load round trip.
   const customArgs = String(privacyValue.customArgs || "")
     .split(/[;\r\n]+/)
@@ -260,7 +261,7 @@ function sanitizeProfile(value) {
       })(),
       cores,
       memory,
-      ...(fingerprintValue ? { fingerprint: sanitizeFingerprintConfig(fingerprintValue, cores, memory) } : {}),
+      ...(fingerprintValue ? { fingerprint: sanitizeFingerprintConfig(fingerprintValue, cores, memory, value.os) } : {}),
     },
     advanced: {
       saveCookies: advancedValue.saveCookies !== false,
@@ -343,7 +344,7 @@ module.exports = {
 // silently re-roll users' fingerprint identity, so the list is the FULL
 // consumed set (plus legacy-carried keys with no current writer), not a
 // minimal one. Unknown keys are dropped by construction — that is the fix.
-function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
+function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory, profileOs) {
   const str = (v, cap) => {
     if (v === undefined || v === null) return undefined;
     const s = String(v).replace(/[\r\n]/g, " ").trim();
@@ -451,6 +452,7 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
   set("userAgent", str(fp.userAgent, 1000));
   set("uaGenerated", bool(fp.uaGenerated));
   set("uaReduced", bool(fp.uaReduced));
+  set("uaVersionRandomized", bool(fp.uaVersionRandomized));
   set("uaPatchRandomized", bool(fp.uaPatchRandomized));
   const rawLanguages = typeof fp.languages === 'string' ? fp.languages.split(/[,，；\r\n]+|;(?! *q *=)/i) : fp.languages;
   const languages = normalizeLanguageTags(rawLanguages).filter(tag => tag.length <= 40).slice(0, 400);
@@ -469,7 +471,8 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory) {
   // 426; a flat 640/480 floor silently re-rolled every pinned mobile panel on
   // save. Desktop keeps 640/480 (desktop pool starts at 1024; persona clamps
   // its own desktop branch at 640 the same way).
-  const mobilePanel = /^(android|ios)$/i.test(String(fp.os || fp.clientHints?.os || ""));
+  const mobilePanel = [profileOs, fp.os, fp.clientHints?.os]
+    .some(os => /^(android|ios|iphone|ipad|ipod)$/i.test(String(os || '').trim()));
   set("screenWidth", intInRange(fp.screenWidth, mobilePanel ? 240 : 640, 7680));
   set("screenHeight", intInRange(fp.screenHeight, mobilePanel ? 240 : 480, 4320));
   set("availLeft", intInRange(fp.availLeft, 0, 7680));

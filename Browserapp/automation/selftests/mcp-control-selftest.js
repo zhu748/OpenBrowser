@@ -54,6 +54,12 @@ function fakeEngine() {
       for (const value of values) profiles.set(value.id, value);
       return this.status();
     },
+    async commitProfiles(values, { prepareReply } = {}) {
+      const saved = values.map(value => this.sanitizeProfile(value));
+      const reply = prepareReply?.(saved);
+      this.syncProfiles(saved);
+      return reply;
+    },
     async persist() { return true; },
     status() {
       return [...profiles.values()].map((profile) => ({

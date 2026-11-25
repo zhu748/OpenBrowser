@@ -40,11 +40,22 @@ assert.equal(fp.connection.downlink, 4.35);
 assert.equal(fp.connection.rtt, 100);
 assert.throws(() => assertFingerprintConsistency({ ...fp, connection: { ...fp.connection, downlink: 10.1 } }), /native bounds/);
 assert.throws(() => assertFingerprintConsistency({ ...fp, connection: { ...fp.connection, rtt: 77 } }), /native bounds/);
+for (const [effectiveType, maxDownlink, minRtt] of [['3g', 1.4, 450], ['2g', 0.3, 1800], ['slow-2g', 0.1, 2700]]) {
+  const make = network => buildFingerprint(sanitizeProfile({ id: 'network-preset', name: 'Network', fingerprintVersion: 2,
+    fingerprint: { network: { effectiveType, ...network } } })).connection;
+  const generated = make({});
+  assert.equal(generated.effectiveType, effectiveType);
+  assert.ok(generated.downlink <= maxDownlink && generated.rtt >= minRtt);
+  assert.deepEqual(make({ downlink: 2.3, rtt: 100 }), { ...generated, downlink: 2.3, rtt: 100 });
+}
 for (let i = 0; i < 10000; i++) {
   const candidate = buildFingerprint({ id: 'audit-network-' + i, os: 'Windows', fingerprintVersion: 2, fingerprintSeed: 'seed-' + i });
   assert.ok(candidate.connection.downlink >= 0 && candidate.connection.downlink <= 10);
   assert.ok(Math.abs(candidate.connection.downlink * 20 - Math.round(candidate.connection.downlink * 20)) < 1e-8);
   assert.ok(candidate.connection.rtt >= 0 && candidate.connection.rtt <= 3000 && candidate.connection.rtt % 50 === 0);
+  if (candidate.connection.effectiveType === '3g') {
+    assert.ok(candidate.connection.downlink <= 1.4 && candidate.connection.rtt >= 450);
+  }
   assert.ok(candidate.consistency.ok);
 }
 console.log('PASS 10,000 v2 native network bounds/buckets, invalid-value diagnostics, battery zero/null/state semantics and persisted round trips');

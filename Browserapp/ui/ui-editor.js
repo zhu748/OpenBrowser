@@ -393,13 +393,11 @@ function editorDraft(strict = true) {
   const ipChangeRemind = $('#editor-ip-change-remind')?.value || '2';
   const geoPermission = $('#editor-geo-permission')?.value || 'allow';
   const geoSource = $('#editor-geo-mode')?.value || 'ip';
-  // 引擎继续读 geoMode：deny→disabled、prompt→prompt，其余用来源（ip/custom）
-  const geoModeDerived = geoPermission === 'deny' ? 'disabled' : (geoPermission === 'prompt' ? 'prompt' : geoSource);
   const privacy = {
     webrtc: $('#editor-webrtc')?.value || 'proxy',
     timezoneMode: $('#editor-timezone-mode')?.value || 'ip',
     timezone: ($('#editor-timezone')?.value || '').trim(),
-    geoMode: geoModeDerived,
+    geoMode: geoSource,
     geoPermission,
     latitude: $('#editor-latitude')?.value,
     longitude: $('#editor-longitude')?.value,
@@ -420,7 +418,7 @@ function editorDraft(strict = true) {
       return { offline, latency, downloadThroughput: download, uploadThroughput: upload };
     })(),
     timezoneFromIp: true,
-    geoFromIp: $('#editor-geo-from-ip')?.checked !== false,
+    geoFromIp: geoSource === 'ip',
     fontMode: $('#editor-font-mode')?.value || 'default',
     fontSize: Number($('#editor-font-size')?.value) || 16,
     deviceProfile: $('#editor-device-profile')?.value || 'default',
@@ -480,20 +478,17 @@ function editorDraft(strict = true) {
     fingerprint: {
       ...(editorForm?.dataset.resetFingerprint ? {} : (current.privacy?.fingerprint || {})),
       ...uaDraft.fingerprint,
+      webrtc: undefined,
+      deviceNameMode: undefined,
+      deviceName: undefined,
+      macMode: undefined,
+      mac: undefined,
+      cores: undefined,
+      hardwareConcurrency: undefined,
+      memory: undefined,
+      deviceMemory: undefined,
       webglVendor: (($('#editor-webgl-vendor')?.value || '').trim()).slice(0, 200),
       webglRenderer: (($('#editor-webgl-renderer')?.value || '').trim()).slice(0, 400),
-      cores: (() => {
-        const v = $('#editor-cores')?.value;
-        if (v === '' || v == null) return undefined;
-        const n = Number(v);
-        return Number.isFinite(n) ? n : undefined;
-      })(),
-      memory: (() => {
-        const v = $('#editor-memory')?.value;
-        if (v === '' || v == null) return undefined;
-        const n = Number(v);
-        return Number.isFinite(n) ? n : undefined;
-      })(),
       // 噪声种子：留空 = 按环境种子自动生成（undefined 会在 JSON 序列化时丢弃，清除旧值）
       canvasId: numberOrUndefined($('#editor-canvas-seed')?.value),
       clientRectsId: numberOrUndefined($('#editor-crects-seed')?.value),
@@ -529,7 +524,7 @@ function editorDraft(strict = true) {
     try { new Intl.DateTimeFormat('en-US', { timeZone: privacy.timezone }).format(); }
     catch (_) { throw new Error(tx('自定义时区无效，请使用 Asia/Shanghai 这类 IANA 时区名称')); }
   }
-  if (strict && privacy.geoMode === 'custom') {
+  if (strict && privacy.geoPermission !== 'deny' && privacy.geoMode === 'custom') {
     const location = window.OpenBrowserProfileValues.normalizeCoordinates(privacy.latitude, privacy.longitude);
     if (!location.valid) {
       throw new Error(tx('自定义地理位置经纬度无效'));
@@ -836,10 +831,10 @@ function renderEditorSummary() {
 // ===== Roxy 4.1.0 对齐辅助：系统/内核版本下拉、窗口位置九宫格、三段开关同步、本机网络横幅 =====
 const EDITOR_OS_VERSIONS = {
   Windows: ['Windows 11', 'Windows 10', 'Windows 8.1', 'Windows 7', '11', '10', '8.1', '8', '7'],
-  macOS: ['macOS 26', 'macOS 15', 'macOS 14', 'macOS 13', 'macOS 12', '15', '14', '13', '12', '11', '10.15'],
+  macOS: ['macOS 27', 'macOS 26', 'macOS 15', 'macOS 14', 'macOS 13', 'macOS 12', '15', '14', '13', '12', '11', '10.15'],
   Linux: ['Linux ALL', 'Ubuntu 24.04', 'Ubuntu 22.04', 'Debian 12', 'Fedora 40'],
-  Android: ['Android 16', 'Android 15', 'Android 14', 'Android 13', 'Android 12', '16', '15', '14', '13', '12', '11'],
-  iOS: ['iOS 26', 'iOS 18', 'iOS 17', 'iOS 16', 'iOS 15'],
+  Android: ['Android 17', 'Android 16', 'Android 15', 'Android 14', 'Android 13', 'Android 12', '16', '15', '14', '13', '12', '11'],
+  iOS: ['iOS 27', 'iOS 26', 'iOS 18', 'iOS 17', 'iOS 16', 'iOS 15'],
 };
 let editorInstalledKernels = [];
 let editorKernelRefreshSequence = 0;
@@ -1019,6 +1014,10 @@ function collectExtraAccounts() {
 // 一次性接线：九宫格、分段开关、ID 复制、横幅刷新、教程关闭、右栏一键随机
 function wireEditorAlignmentControls() {
   buildEditorPosGrid();
+  const coreSelect = $('#editor-cores');
+  if (coreSelect) {
+    for (let count = 1; count <= 64; count++) coreSelect.add(new Option(String(count), String(count)));
+  }
   $('#editor-add-account')?.addEventListener('click', () => {
     $('#editor-extra-accounts')?.append(buildExtraAccountRow());
   });
@@ -1077,7 +1076,7 @@ function randomizeFingerprintDraft() {
     const bytes = new Uint8Array(16);
     window.crypto.getRandomValues(bytes);
     form.dataset.fingerprintSeed = Array.from(bytes, (n) => n.toString(16).padStart(2, '0')).join('');
-    form.dataset.fingerprintVersion = '2';
+    form.dataset.fingerprintVersion = String(window.OpenBrowserProfileValues.CURRENT_FINGERPRINT_VERSION);
     form.dataset.resetFingerprint = '1';
     delete form.dataset.uaProfile;
   }
@@ -1262,11 +1261,13 @@ function showProfileEditor(value, revision) {
     $('#editor-proxy-result').textContent = profile.exitIp ? tx('上次出口：') + profile.exitIp + ' · ' + countryName(profile.exitCountryCode) : tx('尚未检测');
   }
   const privacy = profile.privacy;
-  editorSet('#editor-webrtc', privacy.webrtc);
+  const values = window.OpenBrowserProfileValues;
+  const device = values.resolveFingerprintDeviceSettings(privacy);
+  editorSet('#editor-webrtc', device.webrtc);
   editorSet('#editor-timezone-mode', privacy.timezoneMode);
   editorSet('#editor-timezone', privacy.timezone);
   editorSet('#editor-geo-permission', privacy.geoPermission || 'allow');
-  editorSet('#editor-geo-mode', ['ip', 'custom'].includes(privacy.geoMode) ? privacy.geoMode : 'ip');
+  editorSet('#editor-geo-mode', values.geolocationUsesIp(privacy) ? 'ip' : 'custom');
   editorSet('#editor-latitude', privacy.latitude);
   editorSet('#editor-longitude', privacy.longitude);
   editorSet('#editor-accuracy', privacy.accuracy);
@@ -1279,7 +1280,6 @@ function showProfileEditor(value, revision) {
     editorSet('#editor-ui-language', mode === 'ip' || mode === 'system' ? 'profile' : mode);
     editorCheck('#editor-lang-from-ip', mode === 'ip');
   }
-  editorCheck('#editor-geo-from-ip', privacy.geoFromIp !== false);
   const resolutionKey = profile.width + 'x' + profile.height;
   const resolution = privacy.resolutionMode === 'real'
     ? 'real'
@@ -1305,18 +1305,10 @@ function showProfileEditor(value, revision) {
   editorSet('#editor-client-rects', privacy.clientRects || 'noise');
   editorSet('#editor-speech', privacy.speech);
   // Select values are strings; 0 must stay "0" (真实), never fall through to "" (自动).
-  editorSet('#editor-cores', (() => {
-    const raw = privacy.cores ?? privacy.fingerprint?.cores;
-    if (raw === '' || raw === null || raw === undefined) return '';
-    return String(raw);
-  })());
-  editorSet('#editor-memory', (() => {
-    const raw = privacy.memory ?? privacy.fingerprint?.memory;
-    if (raw === '' || raw === null || raw === undefined) return '';
-    return String(raw);
-  })());
-  editorSet('#editor-device-name-mode', privacy.deviceNameMode || 'noise');
-  editorSet('#editor-device-name', privacy.deviceName || '');
+  editorSet('#editor-cores', device.cores);
+  editorSet('#editor-memory', device.memory);
+  editorSet('#editor-device-name-mode', device.deviceNameMode);
+  editorSet('#editor-device-name', device.deviceName);
   editorSet('#editor-webgl-vendor', privacy.fingerprint?.webglVendor || '');
   editorSet('#editor-webgl-renderer', privacy.fingerprint?.webglRenderer || '');
   editorSet('#editor-canvas-seed', fpSeedText(privacy.fingerprint?.canvasId));
@@ -1338,8 +1330,8 @@ function showProfileEditor(value, revision) {
   editorSet('#editor-font-list', Array.isArray(privacy.fingerprint?.fonts) ? privacy.fingerprint.fonts.join(', ') : (privacy.fingerprint?.fonts || ''));
   editorSet('#editor-ssl-min', privacy.fingerprint?.sslVersionMin || '');
   editorSet('#editor-ssl-blacklist', privacy.fingerprint?.sslBlacklist || '');
-  editorSet('#editor-mac-mode', privacy.macMode || 'real');
-  editorSet('#editor-mac', privacy.mac || '');
+  editorSet('#editor-mac-mode', device.macMode);
+  editorSet('#editor-mac', device.mac);
   editorSet('#editor-gpu-mode', privacy.hardwareAcceleration || 'on');
   editorCheck('#editor-no-sandbox', privacy.noSandbox);
   editorSet('#editor-custom-args', privacy.customArgs || '');
@@ -1451,7 +1443,8 @@ async function refreshUaMetaPreview() {
       profileId: editingProfileId,
       engine: $('#editor-engine')?.value,
       engineVersion: $('#editor-engine-version')?.value,
-      os: editorOsToUaKey($('#editor-os')?.value),
+      os: $('#editor-os')?.value,
+      osVersion: $('#editor-os-version')?.value,
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
     if (!request.current()) return;

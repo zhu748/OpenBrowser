@@ -58,9 +58,10 @@ async function main() {
   } else browser = h.chooseChromiumBinary();
   const profile = sanitizeProfile({ id: 'inline-native-' + engine, name: 'Inline native parity', engine, os: 'Windows',
     fingerprintSeed: 'inline-native-stable', privacy: { cores: 2, fontListMode: 'real' } });
-  // Compatibility follows the installed kernel, independently of a user's
-  // pinned UA. Exercise that distinction with a deliberately older Firefox UA.
-  if (firefox) profile.userAgent = firefoxUserAgent('win', String(parseInt(browser.version, 10) - 1) + '.0');
+  // A custom product patch must preserve the installed major and native behavior.
+  if (firefox) profile.userAgent = firefoxUserAgent('win', browser.version, {
+    productVersion: browser.version.split('.').slice(0, 2).concat('77').join('.'),
+  });
   const build = () => firefox ? buildFirefoxFingerprint(profile, browser.version)
     : buildFingerprint({ ...profile, kernelVersion: browser.version });
   let fingerprint = build();

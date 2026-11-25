@@ -5,7 +5,8 @@ const crypto = require('node:crypto');
 const ua = require('../user-agent');
 const { buildEditorUa } = require('../editor-ua');
 const { buildFingerprint, assertFingerprintConsistency } = require('../fingerprint');
-const { randomUaPatchVersion, resolveUaPatchVersion } = require('../ua-version');
+const { resolveUaPatchVersion, pickPublishedChromeVersion, resolvePublishedChromeVersion } = require('../ua-version');
+const publishedVersions = require('../data/chrome-release-versions.json').versions;
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
 
@@ -14,22 +15,34 @@ function main() {
     ['chromium', '156.0.8078.74', 'Chrome/156.0.8078.74', '156.0.8078.'],
     ['firefox', '156.0', 'Firefox/156.0.74', '156.0.'],
   ]) {
-    const versions = new Set();
-    for (let index = 0; index < 254; index++) {
-      const version = randomUaPatchVersion(kernel, { engine, previousUserAgent: oldUa,
-        randomInt: size => { assert.equal(size, 254); return index; } });
-      assert.ok(version.startsWith(prefix));
-      assert.notEqual(version, prefix + '74');
-      versions.add(version);
-    }
-    assert.equal(versions.size, 254, 'the random pool covers all other patches, rather than two text formats');
-    assert.ok(versions.has(prefix + '1') && versions.has(prefix + '255'));
     assert.equal(resolveUaPatchVersion(kernel, oldUa, engine), prefix + '74');
   }
   assert.equal(resolveUaPatchVersion('157.0.8100.1', 'Chrome/156.0.8078.74'), '157.0.8100.74');
   assert.equal(resolveUaPatchVersion('157.0', 'Firefox/156.0.74', 'firefox'), '157.0.74');
   assert.equal(resolveUaPatchVersion('156.0.8078.74', 'Firefox/156.0.74'), null);
-  assert.throws(() => randomUaPatchVersion('unknown'));
+  const kernelVersion = '156.0.8078.79';
+  for (const [os, pool] of Object.entries(publishedVersions)) {
+    for (let major = 146; major <= 160; major++) {
+      const versions = pool[major];
+      assert.ok(versions?.length > 1, `${os} Chrome ${major} supports randomization`);
+      assert.equal(new Set(versions).size, versions.length);
+      for (const version of versions) {
+        assert.match(version, /^\d+\.\d+\.\d+\.\d+$/);
+        assert.ok(version.startsWith(major + '.'));
+        assert.equal(resolvePublishedChromeVersion(versions[0], os, `Chrome/${version}`), version);
+      }
+    }
+    const versions = pool[156];
+    for (const version of versions) {
+      const previous = `Chrome/${version}`;
+      const picked = pickPublishedChromeVersion(kernelVersion, os, previous);
+      assert.ok(versions.includes(picked));
+      assert.notEqual(picked, version);
+      assert.equal(resolvePublishedChromeVersion('157.0.8116.1', os, previous), '157.0.8116.1');
+    }
+    assert.equal(resolvePublishedChromeVersion(kernelVersion, os, 'Chrome/156.0.1.2'), kernelVersion);
+    assert.equal(pickPublishedChromeVersion('999.0.1.2', os, 'Chrome/999.0.1.2'), '999.0.1.2');
+  }
   const firefoxEngine = { profiles: new Map(), chooseBrowser: () => ({ version: '160.0.2' }) };
   for (let i = 0; i < 16; i++) {
     const native = buildEditorUa(firefoxEngine, { engine: 'firefox', os: 'Windows', random: true, previousUserAgent: 'Firefox/160.0.73' });
@@ -57,24 +70,49 @@ function main() {
   const engine = { profiles: new Map([
     ['linux', { os: 'Linux', osVersion: 'ubuntu 22.04', engine: 'chromium' }],
     ['mac', { os: 'macos_arm', osVersion: '14.5', engine: 'chromium' }],
-  ]), chooseBrowser: () => ({ version: '159.0.8154.6' }) };
+    ['pinned-mac', { os: 'macOS', fingerprintVersion: 3,
+      privacy: { fingerprint: { clientHints: { architecture: 'arm', platform_version: '15.7.0' } } } }],
+    ['iphone', { os: 'iOS', osVersion: 'iOS 27', fingerprintVersion: 3,
+      privacy: { fingerprint: { clientHints: { deviceModel: 'iPhone 18 Pro Max', platform_version: '27.0.0' } } } }],
+    ['old-iphone', { os: 'iOS', osVersion: '18', fingerprintVersion: 2,
+      privacy: { fingerprint: { clientHints: { deviceModel: 'iPhone 16', platform_version: '18.0.0' } } } }],
+  ]), chooseBrowser: () => ({ version: kernelVersion }) };
   const originalRandomBytes = crypto.randomBytes;
   crypto.randomBytes = size => Buffer.alloc(size);
   try {
     const linux = buildEditorUa(engine, { profileId: 'linux', random: true });
     assert.equal(linux.os, 'linux');
-    assert.equal(linux.metadata.platformVersion, '6.5.0');
+    assert.equal(linux.metadata.platformVersion, '');
     const mac = buildEditorUa(engine, { profileId: 'mac', random: true });
     assert.equal(mac.os, 'macos_arm');
     assert.equal(mac.metadata.architecture, 'arm');
     assert.equal(mac.metadata.platformVersion, '14.5.0');
+    const pinnedMac = buildEditorUa(engine, { profileId: 'pinned-mac', os: 'macOS', random: true });
+    assert.equal(pinnedMac.os, 'macos_arm');
+    assert.equal(pinnedMac.metadata.architecture, 'arm');
+    assert.equal(pinnedMac.metadata.platformVersion, '15.7.0');
     const switched = buildEditorUa(engine, { profileId: 'mac', os: 'Windows', random: true });
     assert.equal(switched.os, 'windows');
     assert.equal(switched.metadata.platformVersion, '15.0.0', 'OS switches cannot inherit the old OS release');
-    const runtime = buildFingerprint({ id: 'editor-random-patch', os: 'Windows', userAgent: switched.userAgent, kernelVersion: '159.0.8154.6',
-      privacy: { fingerprint: { uaGenerated: true, uaPatchRandomized: switched.uaPatchRandomized, clientHints: switched.clientHints } } });
+    const runtime = buildFingerprint({ ...sanitizeProfile({ id: 'editor-random-version', name: 'Generated UA', os: 'Windows',
+      userAgent: switched.userAgent, privacy: { fingerprint: { uaGenerated: switched.kernelBound,
+        uaVersionRandomized: switched.uaVersionRandomized, uaReduced: switched.uaReduced, clientHints: switched.clientHints } } }),
+      kernelVersion });
     assert.equal(runtime.userAgent, switched.userAgent);
     assert.equal(runtime.userAgentMetadata.fullVersion, switched.chromeFull);
+    assert.ok(publishedVersions.windows[156].includes(switched.chromeFull));
+    assert.equal(ua.parseChromeVersion(switched.userAgent).full, switched.chromeFull);
+    assert.equal(switched.uaVersionRandomized, true);
+    assertFingerprintConsistency(runtime);
+    const ios = buildEditorUa(engine, { profileId: 'iphone', os: 'iOS', random: true, chromeMajor: 148 });
+    assert.equal(ios.os, 'ios');
+    assert.equal(ios.platform, 'iPhone');
+    assert.equal(ios.clientHints.deviceModel, 'iPhone 18 Pro Max');
+    assert.ok(publishedVersions.ios[156].includes(ios.chromeFull));
+    assert.equal(ios.kernelBound, true);
+    const rerolled = buildEditorUa(engine, { profileId: 'old-iphone', os: 'iOS', osVersion: 'iOS 27',
+      fingerprintVersion: '3', resetFingerprint: true, random: true, chromeMajor: 148 });
+    assert.match(rerolled.userAgent, /iPhone OS 27_0/);
     assert.throws(() => buildEditorUa(engine, { os: 'Android', engine: 'firefox' }), { code: 'UA_PLATFORM_UNSUPPORTED' });
   } finally { crypto.randomBytes = originalRandomBytes; }
 

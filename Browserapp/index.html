@@ -735,7 +735,6 @@
                       <label for="editor-geo-mode" data-i18n="editor.geoSource">地理位置</label>
                       <div class="field-inline-group">
                         <select id="editor-geo-mode"><option value="ip" data-i18n="editor.geoModeIp">基于 IP 匹配</option><option value="custom">自定义</option></select>
-                        <label class="check-row" style="margin:0"><input id="editor-geo-from-ip" type="checkbox" checked> 基于 IP 自动生成坐标</label>
                       </div>
                     </div>
                   </div>
@@ -933,24 +932,12 @@
                       </div>
                     </div>
                     <div class="roxy-field-row">
-                      <span class="roxy-field-label">硬件并发数</span>
-                      <div class="roxy-pill-group" data-sync-select="#editor-cores">
-                        <button type="button" data-pill-val="">自动</button>
-                        <button type="button" data-pill-val="4">4核</button>
-                        <button type="button" data-pill-val="8">8核</button>
-                        <button type="button" data-pill-val="12">12核</button>
-                        <button type="button" data-pill-val="16">16核</button>
-                      </div>
+                      <label class="roxy-field-label" for="editor-cores" data-i18n="editor.hwConcurrency">硬件并发数</label>
+                      <select id="editor-cores"><option value="">自动</option><option value="0">真实</option></select>
                     </div>
                     <div class="roxy-field-row">
-                      <span class="roxy-field-label">设备内存</span>
-                      <div class="roxy-pill-group" data-sync-select="#editor-memory">
-                        <button type="button" data-pill-val="">自动</button>
-                        <button type="button" data-pill-val="2">2G</button>
-                        <button type="button" data-pill-val="4">4G</button>
-                        <button type="button" data-pill-val="6">6G</button>
-                        <button type="button" data-pill-val="8">8G</button>
-                      </div>
+                      <label class="roxy-field-label" for="editor-memory" data-i18n="editor.deviceMemory">设备内存</label>
+                      <select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="0.25">0.25G</option><option value="0.5">0.5G</option><option value="1">1G</option><option value="2">2G</option><option value="4">4G</option><option value="6">6G</option><option value="8">8G</option></select>
                     </div>
                     <div class="roxy-field-row">
                       <span class="roxy-field-label">禁用沙盒</span>
@@ -994,8 +981,6 @@
                     <label>蓝牙适配器<select id="editor-bluetooth"><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
                     <label>ClientRects<select id="editor-client-rects"><option value="noise">随机微扰</option><option value="real">真实直通</option></select></label>
                     <label>SpeechVoices<select id="editor-speech"><option value="noise">随机模拟</option><option value="real">真实直通</option><option value="blocked">阻断关闭</option></select></label>
-                    <label><span data-i18n="editor.hwConcurrency">硬件并发数</span><select id="editor-cores"><option value="">自动</option><option value="0">真实</option><option value="2">2核</option><option value="4">4核</option><option value="6">6核</option><option value="8">8核</option><option value="10">10核</option><option value="12" selected>12核</option><option value="16">16核</option><option value="20">20核</option><option value="24">24核</option></select></label>
-                    <label><span data-i18n="editor.deviceMemory">设备内存</span><select id="editor-memory"><option value="">自动</option><option value="0">真实</option><option value="2">2G</option><option value="4">4G</option><option value="6">6G</option><option value="8" selected>8G</option></select></label>
                     <label><span data-i18n="editor.deviceNameMode">设备名称</span><select id="editor-device-name-mode"><option value="noise">随机</option><option value="real">真实</option><option value="custom">自定义</option></select></label>
                     <label>自定义设备名
                       <div class="field-inline-group">

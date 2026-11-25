@@ -2,7 +2,7 @@
 
 const { noiseDelta, normalizeHost, normalizeSiteHost, hostMatchesPattern, listIncludesHost } = require('./fingerprint/noise-policy');
 const { formatGeopositionValue } = require('./fingerprint/geolocation-policy');
-const { normalizeBatterySnapshot, normalizeStabilitySettings } = require('../shared/profile-values');
+const { normalizeBatterySnapshot, normalizeStabilitySettings, formatGeneratedDeviceName } = require('../shared/profile-values');
 
 /**
  * Seed-derived fingerprint generators and persona data tables.
@@ -136,6 +136,25 @@ const MEDIA_DEVICE_POOLS_BY_OS = Object.freeze({
 });
 
 const MEDIA_DEVICE_TEMPLATES = MEDIA_DEVICE_POOLS_BY_OS.windows;
+const MEDIA_DEVICE_POOLS_V4 = Object.freeze({
+  windows_desktop: [
+    { input: 'Microphone (USB Audio Device)', output: 'Speakers (USB Audio Device)', video: 'USB Camera' },
+    { input: 'Microphone (USB Audio Device)', output: 'Speakers (Realtek(R) Audio)', video: 'USB Video Device' },
+  ],
+  linux: [
+    { input: 'Built-in Audio Analog Stereo', output: 'Built-in Audio Analog Stereo', video: 'Integrated Webcam' },
+    { input: 'PulseAudio Internal Microphone', output: 'PulseAudio Internal Speaker', video: 'USB 2.0 Camera' },
+  ],
+  linux_desktop: [
+    { input: 'USB Audio Analog Stereo', output: 'Built-in Audio Analog Stereo', video: 'USB Camera' },
+    { input: 'USB Audio Analog Stereo', output: 'USB Audio Analog Stereo', video: 'USB 2.0 Camera' },
+  ],
+  macos_desktop: MEDIA_DEVICE_POOLS_BY_OS.macos_desktop.slice(1),
+  ios: [
+    { input: 'Built-in Microphone', output: 'Built-in Speaker', video: 'Back Camera' },
+    { input: 'Built-in Microphone', output: 'Built-in Speaker', video: 'Front Camera' },
+  ],
+});
 
 const WINDOWS_SPEECH_VOICES = [
   { name: "Microsoft David - English (United States)", lang: "en-US" },
@@ -518,14 +537,16 @@ function createMediaDevicesFromSeed(seedInput, options = {}) {
   let acc = 0;
   for (let i = 0; i < raw.length; i += 1) acc += raw.charCodeAt(i);
   const osKey = String(options.os || '').toLowerCase();
-  const desktopClass = options.laptop === false;
-  const pool = (osKey.startsWith('macos') || osKey === 'darwin')
-    ? (desktopClass ? MEDIA_DEVICE_POOLS_BY_OS.macos_desktop : MEDIA_DEVICE_POOLS_BY_OS.macos)
-    : (osKey === 'android'
-      ? MEDIA_DEVICE_POOLS_BY_OS.android
-      : (osKey === 'linux'
-        ? MEDIA_DEVICE_POOLS_BY_OS.linux
-        : MEDIA_DEVICE_TEMPLATES));
+  const desktopClass = options.laptop === false && osKey !== 'ios' && osKey !== 'android';
+  const isMac = osKey.startsWith('macos') || osKey === 'darwin';
+  const platform = isMac ? 'macos' : osKey;
+  const v4 = options.fingerprintVersion >= 4;
+  const platformClass = desktopClass ? platform + '_desktop' : platform;
+  const legacyPlatform = isMac ? platformClass : platform;
+  const v4Pool = v4 && MEDIA_DEVICE_POOLS_V4[platformClass];
+  const legacyPool = Object.hasOwn(MEDIA_DEVICE_POOLS_BY_OS, legacyPlatform)
+    ? MEDIA_DEVICE_POOLS_BY_OS[legacyPlatform] : MEDIA_DEVICE_TEMPLATES;
+  const pool = Array.isArray(v4Pool) ? v4Pool : legacyPool;
   const tpl = pool[acc % pool.length] || pool[0];
   // Chrome hands out 64-character lowercase hex identifiers, salted per origin, and never brands
   // them with a product prefix. Derive each identifier from the whole profile seed so two
@@ -537,15 +558,14 @@ function createMediaDevicesFromSeed(seedInput, options = {}) {
   const videoInputId = digestHex('videoinput');
   const audioOutputId = digestHex('audiooutput');
   const groupId = digestHex('group');
-  const usbTag = digestHex('usb').slice(0, 4) + ':' + digestHex('usb').slice(4, 8);
   const emptyLabels = options.emptyLabels === true;
   const labelOverride = options.labels && typeof options.labels === 'object' ? options.labels : null;
   const inputLabel = emptyLabels ? '' : String(labelOverride?.audioinput || labelOverride?.input || tpl.input);
-  const defaultVideo = pool === MEDIA_DEVICE_POOLS_BY_OS.macos
-    ? (tpl.video || 'FaceTime HD Camera')
-    : (pool === MEDIA_DEVICE_POOLS_BY_OS.android
-      ? (tpl.video || 'Back Camera')
-      : (tpl.video ? `${tpl.video} (${usbTag})` : `Integrated Camera (${usbTag})`));
+  let defaultVideo = tpl.video || 'Integrated Camera';
+  if (!v4 && pool !== MEDIA_DEVICE_POOLS_BY_OS.macos && pool !== MEDIA_DEVICE_POOLS_BY_OS.android) {
+    const usbHash = digestHex('usb');
+    defaultVideo += ` (${usbHash.slice(0, 4)}:${usbHash.slice(4, 8)})`;
+  }
   const videoLabel = emptyLabels ? '' : String(labelOverride?.videoinput || labelOverride?.video || defaultVideo);
   const outputLabel = emptyLabels ? '' : String(labelOverride?.audiooutput || labelOverride?.output || tpl.output);
   const devices = [
@@ -669,6 +689,7 @@ function createDeviceNameFromSeed(seedInput, options = {}) {
   if (mode === 'real') return null;
   if (mode === 'custom' && custom) return custom;
   const seed = hashSeed(String(seedInput || 'device'));
+  if (options.fingerprintVersion >= 4) return formatGeneratedDeviceName(options.os, seed, options);
   const prefix = DEVICE_NAME_PREFIXES[u32(seed, 0) % DEVICE_NAME_PREFIXES.length];
   const suffix = DEVICE_NAME_SUFFIXES[u32(seed, 4) % DEVICE_NAME_SUFFIXES.length];
   const num = 1000 + (u32(seed, 8) % 9000);

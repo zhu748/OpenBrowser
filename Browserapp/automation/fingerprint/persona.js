@@ -7,11 +7,12 @@ const { fingerprintConsistencyIssues, assertFingerprintConsistency } = require('
 const { resolveProfileGeolocation } = require('./geolocation-policy');
 
 const { normalizeNetworkInformation, normalizeHardwareConcurrency, normalizeDeviceMemory,
-  resolveDoNotTrackMode, toFiniteNumber } = require('../../shared/profile-values');
+  resolveDoNotTrackMode, toFiniteNumber, formatLocalMacAddress } = require('../../shared/profile-values');
 const { normalizeUaOs } = require('../user-agent');
 const { resolveProfileTimezone } = require('../locale-from-country');
 const { OPENBROWSER_KERNEL_VERSION } = require('../versions');
 const { resolvePersonaUa } = require('./persona-ua');
+const { desktopPlatformVersion } = require('../device-personas');
 
 /**
  * Persona construction: buildFingerprint (deterministic profile ->
@@ -21,6 +22,13 @@ const { resolvePersonaUa } = require('./persona-ua');
 
 const { pickPersona, fontsForOs, exclusiveFontsForOtherOs, isPersonaWebglCompatible, resolveCompatiblePersona, applyPersonaPerturbations, mobilePersona, supportsRuntimePersona, buildUaProfile, buildAcceptLanguageHeader, parseOsFromUa, OS_PRESETS, canonicalBridgeToken, hashSeed, mulberry32, WEBGL_PRESETS, webglPresetsForOs, webglParameterOverrides, buildWebglFpPayload, desktopOs, resolveStabilityPolicy, createBatteryFromSeed, createMediaDevicesFromSeed, createSpeechVoicesFromSeed, createDeviceNameFromSeed, createLocalIpFromSeed, createLocalMdnsFromSeed, formatGeopositionValue, audioMarkFromSeed, clientRectMarkFromSeed } = require('./shared');
 
+// Defaults for the resolved effective type. Explicit measurements and the
+// historical v1 draw retain their existing semantics.
+const SLOW_NETWORK_PRESETS = new Map([
+  ['3g', { downlink: [0.4, 0.55, 0.7, 0.85, 1, 1.15, 1.4], rtt: [450, 500, 600, 750, 900] }],
+  ['2g', { downlink: [0.15, 0.2, 0.25, 0.3], rtt: [1800, 1950, 2100, 2250] }],
+  ['slow-2g', { downlink: [0.05, 0.1], rtt: [2700, 2850, 3000] }],
+]);
 
 /**
  * Build fingerprint config from profile + optional privacy.fingerprint overrides.
@@ -122,7 +130,9 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
     mode: fpIn.stabilityMode || privacy.stabilityMode,
   });
 
-  const { uaOverrideStr, clientHintsIn, kernelMajor, defaultKernelMajor, uaProfile: resolvedUa } = resolvePersonaUa({ profile, privacy, fpIn, draw });
+  const { uaOverrideStr, clientHintsIn, kernelMajor, defaultKernelMajor, selectedVersion, uaProfile: resolvedUa } = resolvePersonaUa({
+    profile, privacy, fpIn, draw, fingerprintVersion: version,
+  });
   let uaProfile = resolvedUa;
 
   const parsedOsForFp = parseOsFromUa(uaProfile.userAgent);
@@ -159,10 +169,24 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
   // pool by default without changing profiles saved under version 1.
   let devicePersona = null;
   if (personaRequested) {
-    devicePersona = pickPersona(uaOs, draw('device.persona', 36));
+    const platformVersion = clientHintsIn.platform_version ?? fpIn.platformVersion;
+    devicePersona = pickPersona(uaOs, draw('device.persona', 36), {
+      fingerprintVersion: version, osVersion: selectedVersion || platformVersion,
+    });
     const useGating = version === 1 && fpIn.webglCapabilityGating !== false && privacy.webglCapabilityGating !== false;
     if (useGating && !isPersonaWebglCompatible(devicePersona, process.platform)) {
       devicePersona = resolveCompatiblePersona(devicePersona, process.platform);
+    }
+    if (version >= 3 && !mobileRequested && uaProfile.metadata && platformVersion == null
+      && (!uaOverrideStr || fpIn.uaGenerated) && (!selectedVersion || uaOs === 'linux')) {
+      const sampledPlatformVersion = desktopPlatformVersion(uaOs, devicePersona, draw('userAgent.platformVersion', 0), kernelMajor || defaultKernelMajor);
+      if (sampledPlatformVersion !== undefined) {
+        uaProfile = buildUaProfile({
+          userAgent: uaProfile.userAgent, os: uaOs, chromeMajor: uaProfile.chromeMajor,
+          chromeFull: uaProfile.chromeFull, ...uaProfile.clientHints, platformNav: uaProfile.platform,
+          platform_version: sampledPlatformVersion, vendor: uaProfile.vendor,
+        });
+      }
     }
     devicePersona = applyPersonaPerturbations(devicePersona, seed) || devicePersona;
     if (!hasCoresOverride) cores = devicePersona.cores;
@@ -190,9 +214,10 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
     mobileDevice = mobilePersona(draw('mobile.persona', 52), mobileRequested, {
       chromeMajor: kernelMajor || defaultKernelMajor || undefined,
       chromeFull: profile.kernelVersion || OPENBROWSER_KERNEL_VERSION,
+      fingerprintVersion: version,
       deviceModel: clientHintsIn.deviceModel,
       model: clientHintsIn.model !== 'K' ? (clientHintsIn.model || (uaOverrideStr ? uaProfile.metadata?.model : '')) : '',
-      osVersion: clientHintsIn.platform_version || clientHintsIn.platformVersion || explicitMobileVersion || (!uaOverrideStr ? profile.osVersion : ''),
+      osVersion: clientHintsIn.platform_version || clientHintsIn.platformVersion || explicitMobileVersion || (!uaOverrideStr ? selectedVersion : ''),
     });
     uaOs = mobileDevice.os;
     if (!hasCoresOverride) cores = mobileDevice.cores;
@@ -233,7 +258,8 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
     }
   }
   const effectiveRenderer = String(fpIn.webglRenderer || webglPreset.renderer || '');
-  const inferredGpu = inferGpuFromRenderer(effectiveRenderer);
+  const inferredGpu = version >= 3 && effectiveRenderer === webglPreset.renderer
+    ? webglPreset.gpu : inferGpuFromRenderer(effectiveRenderer);
   const webglGpu = ((fpIn.webgpu && typeof fpIn.webgpu === 'object') || fpIn.gpuVendor || fpIn.gpuArchitecture)
     ? {
       vendor: String(fpIn.webgpu?.vendor || fpIn.gpuVendor || inferredGpu?.vendor || webglPreset.gpu?.vendor || ''),
@@ -259,6 +285,7 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
       labels: mediaLabelTemplates,
       os: uaOs,
       laptop: devicePersona ? devicePersona.laptop !== false : undefined,
+      fingerprintVersion: version,
     });
   // Device class, not a coin flip, decides the battery shape. Desktop-class personas
   // (Mac mini / iMac / Studio, Linux towers, Windows desktops) have no battery hardware at
@@ -291,10 +318,13 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
   );
   const deviceNameMode = mode('deviceNameMode', ['noise', 'custom', 'real'], privacy.deviceNameMode || 'noise');
   const deviceName = createDeviceNameFromSeed(
-    stableIdentity + ':device:' + seed.toString('hex').slice(0, 8),
+    stableIdentity + ':device:' + seed.toString('hex').slice(0, version >= 4 ? 64 : 8),
     {
       mode: deviceNameMode,
       custom: fpIn.deviceName || privacy.deviceName || '',
+      os: uaOs,
+      laptop: devicePersona?.laptop,
+      fingerprintVersion: version,
     }
   );
   const webrtcLocalIp = String(
@@ -314,7 +344,8 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
   // MAC 地址（对齐常见指纹浏览器的设备标识组）：MAC 本身不会暴露给网页 JS，
   // 但作为环境硬件标识记录在 init.json 与概要中；custom 模式由用户固定。
   const macMode = mode('macMode', ['real', 'custom'], privacy.macMode === 'custom' ? 'custom' : 'real');
-  const macValue = String(fpIn.mac || privacy.mac || '').trim().toUpperCase();
+  const macValue = String(fpIn.mac || privacy.mac || '').trim().toUpperCase()
+    || (version >= 4 && macMode === 'custom' ? formatLocalMacAddress(hashSeed(identitySeed + ':mac')) : '');
 
   // --- navigator.connection persona (Roxy networkType/networkSpeed/downloadSpeed/latency 对齐) ---
   // NetworkInformation exposes host NIC conditions (effectiveType / downlink / rtt) that a
@@ -330,6 +361,10 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
   // project it onto the native bound; v2 corrects only the formerly invalid slot.
   const NETWORK_DOWNLINK_POOL = [1.45, 2.3, 4.35, 5.6, 8.7, 9.15, version === 1 ? 10.1 : 10];
   const NETWORK_RTT_POOL = [50, 100, 150, 200, 250];
+  const effectiveType = String(networkIn?.effectiveType || NETWORK_EFFECTIVE_TYPES[draw('network.effectiveType', 60) % NETWORK_EFFECTIVE_TYPES.length]);
+  const slowerNetwork = version >= 2 ? SLOW_NETWORK_PRESETS.get(effectiveType) : null;
+  const downlinkPool = slowerNetwork?.downlink || NETWORK_DOWNLINK_POOL;
+  const rttPool = slowerNetwork?.rtt || NETWORK_RTT_POOL;
   // connection.type is Android-only in stock Chrome: a desktop build leaves the field
   // undefined, so a desktop persona reporting ethernet/wifi is a one-read tell — the key is
   // omitted on desktop unless the user pinned it. Seeds moved off 36/44 (which the persona
@@ -385,13 +420,13 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
     ...(mobileDevice
       ? { type: String(networkIn?.type || (draw('network.type', 56) % 4 === 0 ? 'ethernet' : 'wifi')) }
       : (networkIn?.type ? { type: String(networkIn.type) } : {})),
-    effectiveType: String(networkIn?.effectiveType || NETWORK_EFFECTIVE_TYPES[draw('network.effectiveType', 60) % NETWORK_EFFECTIVE_TYPES.length]),
+    effectiveType,
     downlink: toFiniteNumber(networkIn?.downlink) !== null
       ? Number(networkIn.downlink)
-      : NETWORK_DOWNLINK_POOL[draw('network.downlink', 64) % NETWORK_DOWNLINK_POOL.length],
+      : downlinkPool[draw('network.downlink', 64) % downlinkPool.length],
     rtt: toFiniteNumber(networkIn?.rtt) !== null
       ? Number(networkIn.rtt)
-      : NETWORK_RTT_POOL[draw('network.rtt', 68) % NETWORK_RTT_POOL.length],
+      : rttPool[draw('network.rtt', 68) % rttPool.length],
     ...(toFiniteNumber(networkIn?.downlinkMax)!==null?{downlinkMax:Number(networkIn.downlinkMax)}:{}),
     saveData: networkIn?.saveData===true,
   };
@@ -494,7 +529,7 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
   const deviceMemory = useRealMemory ? null : (normalizeDeviceMemory(fpIn.deviceMemory) ?? memory);
   const fingerprint = {
     ...(version >= 2 ? { generationVersion: version } : {}),
-    ...(!uaOverrideStr && String(profile.osVersion || '').trim()
+    ...((version >= 3 || !uaOverrideStr) && String(profile.osVersion || '').trim()
       ? { osVersion: String(profile.osVersion).trim() } : {}),
     seed: seed.toString('hex').slice(0, 16),
     profileId: profile.id,
@@ -614,8 +649,11 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
         os: mobileDevice.os,
         osVersion: mobileDevice.osVersion,
         cores: mobileDevice.cores,
-        viewport: { ...mobileDevice.viewport },
-        screen: { ...mobileDevice.screen },
+        viewport: {
+          width: screenWidth,
+          height: Math.min(screenHeight, Math.max(320, screenHeight - (mobileDevice.screen.height - mobileDevice.viewport.height))),
+        },
+        screen: { width: screenWidth, height: screenHeight },
         panel: { ...mobileDevice.panel },
         dpr: mobileDevice.dpr,
         gpu: { vendor: mobileDevice.gpu.vendor, renderer: mobileDevice.gpu.renderer, family: mobileDevice.gpu.family },

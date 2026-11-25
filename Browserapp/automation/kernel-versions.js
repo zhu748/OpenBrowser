@@ -255,8 +255,8 @@ function userPref(key, value) {
 
 /**
  * Build the user.js body applied before every launch.
- * Manual-empty proxy (type 1, no hosts) is used for Direct so Firefox can
- * never fall back to the host's system proxy (type 0 would).
+ * Direct uses manual mode with empty endpoints so an older launch's persisted
+ * proxy settings cannot be inherited.
  *
  * extraPrefs: optional ordered [key, value] pairs appended by the launch
  * pipeline. Defined values override the base preferences. Undefined values
@@ -272,23 +272,15 @@ function buildFirefoxUserJs({ userAgent, acceptLanguages, locale, proxyEndpoint,
   if (locale) lines.push(userPref('intl.locale.requested', locale));
   const proxy = parseProxyEndpoint(proxyEndpoint);
   lines.push(userPref('network.proxy.type', 1));
-  if (proxy) {
-    if (proxy.scheme === 'socks5' || proxy.scheme === 'socks4') {
-      lines.push(userPref('network.proxy.socks', proxy.host));
-      lines.push(userPref('network.proxy.socks_port', proxy.port));
-      lines.push(userPref('network.proxy.socks_version', proxy.scheme === 'socks4' ? 4 : 5));
-      lines.push(userPref('network.proxy.socks_remote_dns', true));
-    } else {
-      // Firefox has no network.proxy.share pref (that is a Chrome-ism read from
-      // about:config in Chromium-based browsers); writing it is inert. The
-      // bridge endpoint is a single local forwarder, so http+ssl suffice.
-      for (const key of ['http', 'ssl']) {
-        lines.push(userPref(`network.proxy.${key}`, proxy.host));
-        lines.push(userPref(`network.proxy.${key}_port`, proxy.port));
-      }
-    }
-    if (noProxyHosts) lines.push(userPref('network.proxy.no_proxies_for', noProxyHosts));
+  const socks = proxy && (proxy.scheme === 'socks5' || proxy.scheme === 'socks4');
+  for (const key of ['http', 'ssl', 'socks']) {
+    const endpoint = (key === 'socks' ? socks : !socks) ? proxy : null;
+    lines.push(userPref(`network.proxy.${key}`, endpoint?.host || ''));
+    lines.push(userPref(`network.proxy.${key}_port`, endpoint?.port || 0));
   }
+  lines.push(userPref('network.proxy.socks_version', proxy?.scheme === 'socks4' ? 4 : 5));
+  lines.push(userPref('network.proxy.socks_remote_dns', Boolean(socks)));
+  lines.push(userPref('network.proxy.no_proxies_for', proxy && noProxyHosts ? noProxyHosts : ''));
   // The kernel is managed by OpenBrowser: no self-updates, no telemetry,
   // no first-run dialogs, no default-browser prompts.
   lines.push(userPref('app.update.enabled', false));

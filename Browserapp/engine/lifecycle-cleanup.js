@@ -127,7 +127,6 @@ module.exports = {
         try { item.markerProcess.kill(); } catch (_) {}
       }
       await item.proxyForwarder?.close().catch(() => {});
-      await item.workerMitmProxy?.close().catch(() => {});
       await item.firefoxImageFilter?.close();
       if (ownsSharedResources()) await stopIpcStubForWindow(item.kernelWindowName).catch(() => {});
       if (item.engine !== 'firefox' && ownsSharedResources() && options.markCleanExit !== false) await this.markProfileCleanExit(item.root).catch(() => {});

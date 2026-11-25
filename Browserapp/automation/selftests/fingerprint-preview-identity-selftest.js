@@ -9,6 +9,10 @@ const { BrowserEngine } = require('../../engine');
 const { LocalService } = require('../../rebuild/local-service');
 const { fromRoxy } = require('../../rebuild/profile-dto');
 const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
+const { CURRENT_FINGERPRINT_VERSION } = require('../fingerprint/generation');
+const { writeOpenBrowserKernelInit, loadInitObject } = require('../kernel-init-sync');
+const { parseChromeVersion } = require('../user-agent');
+const publishedVersions = require('../data/chrome-release-versions.json').versions;
 
 function identity(fp) {
   return { seed: fp.seed, canvas: fp.canvas, audio: fp.audio, clientRects: fp.clientRects,
@@ -20,7 +24,9 @@ async function main() {
   try {
     const engine = new BrowserEngine({ getPath: () => root });
     await engine.init(null);
-    engine.chooseBrowser = profile => ({ version: profile.engine === 'firefox' ? '159.0' : '159.0.8154.6' });
+    engine.chooseBrowser = profile => ({ version: profile.engine === 'firefox'
+      ? (profile.engineVersion === '158' ? '158.0' : '159.0')
+      : (profile.engineVersion === '160' ? '160.0.8182.0' : '159.0.8154.6') });
     const service = new LocalService({ engine, root, dialog: {}, window: () => null });
     for (const coreType of ['Chrome', 'Firefox']) {
       const selected = { os: 'Windows', osVersion: 'Windows 11', coreType, coreVersion: '159' };
@@ -30,6 +36,15 @@ async function main() {
       assert.equal(compactProfile.id, compact._fingerprintDraft.profileId);
       assert.equal(compactProfile.userAgent, compact.userAgent);
       assert.equal(compactProfile.fingerprintSeed, compact._fingerprintDraft.seed);
+      assert.equal(compactProfile.fingerprintVersion, CURRENT_FINGERPRINT_VERSION);
+      assert.equal(compact._fingerprintDraft.uaPatchRandomized, false);
+      if (coreType === 'Chrome') {
+        assert.match(compact.userAgent, /Chrome\/159\.0\.0\.0 /);
+        assert.equal(compact._fingerprintDraft.clientHints.ua_full_version, '159.0.8154.6');
+        assert.equal(compactProfile.privacy.cores, null);
+        assert.equal(compactProfile.privacy.memory, null);
+        assert.equal(compactProfile.privacy.fingerprint.webglRenderer, '');
+      }
       const [preview] = await service.request('fingerprint:preview', selected);
       const payload = { ...selected, ...preview, windowName: coreType + ' preview' };
       const row = await service.request('profiles:create', payload);
@@ -71,6 +86,122 @@ async function main() {
       for (const imported of imports)
         assert.equal(engine.fingerprintFor(imported._fingerprintDraft.profileId).seed, imported._openbrowser.seed);
     }
+    const legacyGraphics = fromRoxy({ os: 'Windows', hardwareConcurrent: '6', deviceMemory: '4' });
+    legacyGraphics.privacy.fingerprint = {
+      webglVendor: 'Google Inc. (Intel)',
+      webglRenderer: 'ANGLE (Intel, Intel(R) Graphics Direct3D11, D3D11)',
+    };
+    await engine.syncProfiles([legacyGraphics]);
+    const [differentPlatform] = await service.request('fingerprint:preview', {
+      profileId: legacyGraphics.id, os: 'macOS', osVersion: '27', webGLInfo: 1,
+    });
+    assert.match(differentPlatform.webGLRender, /Metal/);
+    assert.equal(differentPlatform.hardwareConcurrent, '6');
+    assert.equal(differentPlatform.deviceMemory, '4');
+    const changed = await service.request('profiles:update', { ...differentPlatform, id: legacyGraphics.id,
+      os: 'macOS', osVersion: '27', webGLInfo: 1, rev: engine.profileForEdit(legacyGraphics.id).rev });
+    assert.equal(changed.privacy.fingerprint.webglRenderer, '');
+    assert.deepEqual(engine.fingerprintFor(changed.id).webgl, differentPlatform._openbrowser.webgl);
+    const [automatic] = await service.request('fingerprint:preview', {
+      profileId: changed.id, hardwareConcurrent: '', deviceMemory: '',
+    });
+    const reset = await service.request('profiles:update', { ...automatic, id: changed.id,
+      hardwareConcurrent: '', deviceMemory: '', rev: engine.profileForEdit(changed.id).rev });
+    assert.equal(reset.privacy.cores, null);
+    assert.equal(reset.privacy.memory, null);
+    assert.equal(engine.fingerprintFor(reset.id).hardwareConcurrency, automatic._openbrowser.hardwareConcurrency);
+    const systemHardware = { os: 'Windows', hardwareConcurrent: '0', deviceMemory: '0' };
+    const systemDrafts = await service.request('fingerprint:preview', { ...systemHardware, count: 2 });
+    const systemRows = await service.request('profiles:create-batch', { ...systemHardware, createCount: 2, fingerDetail: systemDrafts });
+    assert.ok(systemRows.every(row => row.privacy.cores === 0 && row.privacy.memory === 0));
+    await assert.rejects(service.request('fingerprint:preview', { os: 'macOS', osVersion: '12' }),
+      { code: 'FINGERPRINT_CONFIG_INVALID' });
+    const display = { os: 'Android', resolutionType: true, resolutionX: '320', resolutionY: '580' };
+    const [customDisplay] = await service.request('fingerprint:preview', display);
+    assert.deepEqual([customDisplay._openbrowser.screen.width, customDisplay._openbrowser.screen.height], [320, 580]);
+    const savedDisplay = await service.request('profiles:create', { ...display, ...customDisplay });
+    const restoredDisplay = await service.request('profiles:update', {
+      id: savedDisplay.id, rev: engine.profileForEdit(savedDisplay.id).rev, resolutionType: false,
+    });
+    assert.equal(restoredDisplay.privacy.fingerprint.screenWidth, 320, 'the custom selection is retained while disabled');
+    const effective = engine.fingerprintFor(savedDisplay.id);
+    assert.ok(effective.screen.width > 320 && effective.screen.height > 580);
+    const [followed] = await service.request('fingerprint:preview', { profileId: savedDisplay.id,
+      resolutionType: false, reuseDraft: customDisplay._fingerprintDraft });
+    assert.deepEqual(followed._openbrowser.screen, effective.screen);
+    const again = await service.request('profiles:update', {
+      id: savedDisplay.id, rev: engine.profileForEdit(savedDisplay.id).rev, resolutionType: true,
+    });
+    assert.deepEqual([again.privacy.fingerprint.screenWidth, again.privacy.fingerprint.screenHeight], [320, 580]);
+    const restoredSize = engine.fingerprintFor(again.id);
+    assert.deepEqual([restoredSize.screen.width, restoredSize.screen.height], [320, 580]);
+    const iosBefore = engine.profiles.size;
+    const [iosImport] = await service.request('fingerprint:preview', { os: 'IOS', useLatestCore: true });
+    await service.request('profiles:import', {
+      os: 'Windows', osVersion: '11', fingerDetail: [iosImport], excelData: [{ windowName: 'iOS without a release', os: 'IOS' }],
+    });
+    assert.equal(engine.profiles.size, iosBefore + 1);
+    assert.equal(engine.profiles.get(iosImport._fingerprintDraft.profileId).osVersion, '');
+    assert.deepEqual(engine.fingerprintFor(iosImport._fingerprintDraft.profileId).mobileDevice, iosImport._openbrowser.mobileDevice);
+    const pinnedDevice = fromRoxy({
+      os: 'Android', osVersion: '16', coreVersion: '158', windowName: 'Pinned Pixel',
+      hardwareConcurrent: '8', webGLInfo: 2,
+      webGLManufacturer: 'Google Inc. (ARM)', webGLRender: 'ANGLE (ARM, Mali-G715, OpenGL ES 3.2)',
+    });
+    pinnedDevice.fingerprintSeed = 'saved-pixel-seed';
+    pinnedDevice.userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Mobile Safari/537.36';
+    pinnedDevice.privacy.fingerprint = { ...pinnedDevice.privacy.fingerprint, uaGenerated: true, uaReduced: true,
+      clientHints: { os: 'android', model: 'Pixel 8 Pro', deviceModel: 'Pixel 8 Pro', platform_version: '16.0.0', ua_full_version: '158.0.8127.88' } };
+    const pinnedFirefox = fromRoxy({ coreType: 'Firefox', os: 'Windows', coreVersion: '158', windowName: 'Custom Firefox UA',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0' });
+    await engine.syncProfiles([pinnedDevice, pinnedFirefox]);
+    const beforeUpgrade = engine.profileForEdit(pinnedDevice.id);
+    const groups = [
+      { version: '159', ids: [pinnedDevice.id] },
+      { version: '159', ids: [pinnedFirefox.id] },
+    ];
+    await assert.rejects(service.request('profiles:upgrade-kernels', { groups }), { code: 'FINGERPRINT_CONFIG_INVALID' });
+    assert.deepEqual(engine.profileForEdit(pinnedDevice.id), beforeUpgrade, 'one incompatible profile rolls back the whole upgrade');
+    assert.equal(engine.profiles.get(pinnedFirefox.id).userAgent, pinnedFirefox.userAgent);
+    assert.deepEqual(await service.request('profiles:upgrade-kernels', { groups: groups.slice(0, 1) }), { updated: 1 });
+    const upgradedDevice = engine.profiles.get(pinnedDevice.id);
+    assert.equal(upgradedDevice.engineVersion, '159');
+    assert.equal(upgradedDevice.fingerprintSeed, pinnedDevice.fingerprintSeed);
+    assert.equal(upgradedDevice.privacy.cores, 8);
+    assert.equal(upgradedDevice.privacy.fingerprint.webglRenderer, pinnedDevice.privacy.fingerprint.webglRenderer);
+    assert.equal(upgradedDevice.privacy.fingerprint.clientHints.deviceModel, 'Pixel 8 Pro');
+    assert.equal(upgradedDevice.privacy.fingerprint.clientHints.ua_full_version, '159.0.8154.6');
+    assert.match(upgradedDevice.userAgent, /Chrome\/159\.0\.0\.0 /);
+    const [pinnedUaOnly] = await service.request('fingerprint:preview', { profileId: upgradedDevice.id,
+      reuseDraft: { seed: upgradedDevice.fingerprintSeed, version: upgradedDevice.fingerprintVersion } });
+    assert.equal(pinnedUaOnly._fingerprintDraft.seed, pinnedDevice.fingerprintSeed);
+    assert.equal(pinnedUaOnly._fingerprintDraft.clientHints.deviceModel, 'Pixel 8 Pro');
+    assert.equal(pinnedUaOnly._fingerprintDraft.clientHints.platform_version, '16.0.0');
+    let newPhone;
+    for (let attempt = 0; attempt < 32; attempt++) {
+      [newPhone] = await service.request('fingerprint:preview', { profileId: upgradedDevice.id, webGLInfo: 1 });
+      if (newPhone._fingerprintDraft.clientHints.deviceModel !== 'Pixel 8 Pro') break;
+    }
+    assert.notEqual(newPhone._fingerprintDraft.clientHints.deviceModel, 'Pixel 8 Pro');
+    const [draftUaOnly] = await service.request('fingerprint:preview', {
+      profileId: upgradedDevice.id, reuseDraft: newPhone._fingerprintDraft, randomizeUaVersion: true,
+      previousUserAgent: newPhone.userAgent, webGLInfo: 1,
+    });
+    assert.notEqual(draftUaOnly.userAgent, newPhone.userAgent);
+    assert.deepEqual(draftUaOnly._openbrowser.mobileDevice, newPhone._openbrowser.mobileDevice);
+    const pinnedMac = fromRoxy({ os: 'macOS', coreType: 'Chrome', windowName: 'Pinned Apple silicon',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.0.0 Safari/537.36' });
+    pinnedMac.fingerprintSeed = 'saved-apple-silicon';
+    pinnedMac.privacy.fingerprint = { uaGenerated: true, uaReduced: true,
+      clientHints: { architecture: 'arm', platform_version: '15.7.0' } };
+    await engine.syncProfiles([pinnedMac]);
+    const [macUaOnly] = await service.request('fingerprint:preview', {
+      profileId: pinnedMac.id, reuseDraft: { seed: pinnedMac.fingerprintSeed, version: pinnedMac.fingerprintVersion },
+      randomizeUaVersion: true,
+    });
+    assert.equal(macUaOnly._openbrowser.os, 'macos_arm');
+    assert.equal(macUaOnly._fingerprintDraft.clientHints.platform_version, '15.7.0');
+    assert.deepEqual(macUaOnly._openbrowser.webgl, engine.fingerprintFor(pinnedMac.id).webgl);
     const configured = fromRoxy({
       coreType: 'Firefox', coreVersion: '159', os: 'Linux', hardwareConcurrent: '20',
       isTimeZone: false, timeZone: 'Asia/Shanghai', resolutionType: true, resolutionX: 1600, resolutionY: 1000,
@@ -102,13 +233,79 @@ async function main() {
     const mobile = { os: 'Android', osVersion: 'Android 13', coreType: 'Chrome', coreVersion: '159' };
     const [mobilePreview] = await service.request('fingerprint:preview', mobile);
     const [mobileUa] = await service.request('fingerprint:preview', {
-      ...mobile, reuseDraft: mobilePreview._fingerprintDraft, previousUserAgent: mobilePreview.userAgent,
+      ...mobile, reuseDraft: mobilePreview._fingerprintDraft,
     });
     assert.deepEqual(mobileUa._fingerprintDraft, mobilePreview._fingerprintDraft);
     assert.deepEqual(mobileUa._openbrowser.mobileDevice, mobilePreview._openbrowser.mobileDevice);
+    assert.equal(mobileUa._openbrowser.mobileDevice.osVersion, 13);
+    for (const selected of [{ os: 'macOS', osVersion: 'macOS 27' }, { os: 'Linux', osVersion: 'Ubuntu' }]) {
+      const [draft] = await service.request('fingerprint:preview', selected);
+      const [refreshed] = await service.request('fingerprint:preview', { ...selected, reuseDraft: draft._fingerprintDraft });
+      assert.deepEqual(refreshed._fingerprintDraft, draft._fingerprintDraft);
+      const row = await service.request('profiles:create', { ...selected, ...refreshed });
+      const stored = engine.fingerprintFor(row.id);
+      assert.deepEqual(stored.userAgentMetadata, refreshed._openbrowser.userAgentMetadata);
+      assert.deepEqual(stored.webgl, refreshed._openbrowser.webgl);
+    }
     assert.deepEqual(identity(mobileUa._openbrowser), identity(mobilePreview._openbrowser));
+    const controls = { os: 'Windows', coreType: 'Chrome', deviceNameSwitch: true, deviceName: '  ', macInfo: true, macAddr: '' };
+    const [devicePreview] = await service.request('fingerprint:preview', controls);
+    assert.match(devicePreview.deviceName, /^(DESKTOP|LAPTOP)-[0-9A-Z]{7}$/);
+    assert.match(devicePreview.macAddr, /^[0-9A-F][26AE](?::[0-9A-F]{2}){5}$/);
+    const [sameDevicePreview] = await service.request('fingerprint:preview', {
+      ...controls, reuseDraft: devicePreview._fingerprintDraft,
+    });
+    assert.equal(sameDevicePreview.deviceName, devicePreview.deviceName);
+    assert.equal(sameDevicePreview.macAddr, devicePreview.macAddr);
+    const deviceProfile = await service.request('profiles:create', { ...controls, ...devicePreview });
+    assert.equal(deviceProfile.privacy.deviceName, '');
+    assert.equal(deviceProfile.privacy.mac, '');
+    const device = engine.fingerprintFor(deviceProfile.id);
+    assert.equal(device.deviceName, devicePreview.deviceName);
+    assert.equal(device.mac.value, devicePreview.macAddr);
+    const written = await writeOpenBrowserKernelInit(path.join(root, 'device-init'), {
+      fingerprint: device, profile: deviceProfile,
+    });
+    const init = loadInitObject(await fs.readFile(written.path));
+    assert.equal(init.machine, devicePreview.deviceName);
+    assert.equal(init.mac_address, devicePreview.macAddr.toLowerCase());
+    const [rerolledDevice] = await service.request('fingerprint:preview', { profileId: deviceProfile.id });
+    assert.notEqual(rerolledDevice.deviceName, devicePreview.deviceName);
+    assert.notEqual(rerolledDevice.macAddr, devicePreview.macAddr);
+    const [fixedDevice] = await service.request('fingerprint:preview', {
+      profileId: deviceProfile.id, deviceName: 'MY-WORKSTATION', macAddr: '02:00:00:11:22:33',
+    });
+    assert.equal(fixedDevice.deviceName, 'MY-WORKSTATION');
+    assert.equal(fixedDevice.macAddr, '02:00:00:11:22:33');
+    assert.equal(fixedDevice._fingerprintDraft.generatedHardware.deviceName, undefined);
+    assert.equal(fixedDevice._fingerprintDraft.generatedHardware.macAddr, undefined);
+    for (const os of ['Windows', 'macOS', 'Linux', 'Android', 'iOS']) {
+      const selected = { os, coreType: 'Chrome', coreVersion: '160' };
+      const [original] = await service.request('fingerprint:preview', selected);
+      const request = { ...selected, reuseDraft: original._fingerprintDraft, randomizeUaVersion: true };
+      const [first] = await service.request('fingerprint:preview', { ...request, previousUserAgent: original.userAgent });
+      const [next] = await service.request('fingerprint:preview', { ...request, previousUserAgent: first.userAgent });
+      assert.notEqual(next.userAgent, first.userAgent);
+      assert.equal(next._fingerprintDraft.uaVersionRandomized, true);
+      assert.equal(next._fingerprintDraft.uaReduced, false);
+      assert.equal(next._fingerprintDraft.seed, original._fingerprintDraft.seed);
+      assert.equal(next._fingerprintDraft.clientHints.deviceModel, original._fingerprintDraft.clientHints.deviceModel);
+      assert.deepEqual(identity(next._openbrowser), identity(original._openbrowser));
+      const version = parseChromeVersion(next.userAgent).full;
+      assert.ok(publishedVersions[next._openbrowser.os][160].includes(version));
+      assert.equal(next._openbrowser.userAgentMetadata.fullVersion, version);
+      const saved = await service.request('profiles:create', { ...selected, ...next });
+      assert.equal(saved.privacy.fingerprint.uaVersionRandomized, true);
+      assert.equal(engine.fingerprintFor(saved.id).userAgent, next.userAgent);
+      assert.equal(engine.fingerprintFor(saved.id).clientHints.ua_full_version, version);
+      const manual = fromRoxy({ userAgent: next.userAgent + ' Custom' }, engine.profiles.get(saved.id));
+      assert.equal(manual.privacy.fingerprint.uaVersionRandomized, undefined);
+    }
     await assert.rejects(service.request('fingerprint:preview', {
       ...mobile, reuseDraft: { ...mobilePreview._fingerprintDraft, seed: '0'.repeat(32) },
+    }), /指纹预览已失效/);
+    await assert.rejects(service.request('fingerprint:preview', {
+      ...mobile, reuseDraft: { ...mobilePreview._fingerprintDraft, version: 1 },
     }), /指纹预览已失效/);
 
     await assert.rejects(service.request('fingerprint:preview', { profileId: 'missing' }), /not found/i);
@@ -132,20 +329,35 @@ async function main() {
     assert.notEqual(afterPurge.id, retried.id, 'purging a window does not reauthorize its old template allocation');
     const legacy = fromRoxy({ os: 'Windows' });
     legacy.fingerprintVersion = 1;legacy.fingerprintSeed = 'legacy-persisted-seed';
+    legacy.userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.8154.73 Safari/537.36';
+    legacy.privacy.fingerprint = { uaGenerated: true, uaPatchRandomized: true };
     await engine.syncProfiles([legacy]);
     const oldIdentity = identity(engine.fingerprintFor(legacy.id));
     await service.request('profiles:update', { id: legacy.id, rev: engine.profileForEdit(legacy.id).rev, windowName: 'legacy rename' });
     assert.equal(engine.profiles.get(legacy.id).fingerprintVersion, 1);
     assert.deepEqual(identity(engine.fingerprintFor(legacy.id)), oldIdentity, 'ordinary edits do not upgrade or reroll legacy identity');
+    assert.equal(engine.fingerprintFor(legacy.id).userAgent, legacy.userAgent);
+    const [legacyUaRefresh] = await service.request('fingerprint:preview', { profileId: legacy.id,
+      reuseDraft: { seed: legacy.fingerprintSeed, version: 1 } });
+    assert.equal(legacyUaRefresh._fingerprintDraft.version, 1);
+    assert.equal(legacyUaRefresh._fingerprintDraft.seed, legacy.fingerprintSeed);
+    assert.equal(legacyUaRefresh._fingerprintDraft.uaPatchRandomized, false);
+    assert.match(legacyUaRefresh.userAgent, /Chrome\/159\.0\.0\.0 /);
+    assert.deepEqual(identity(legacyUaRefresh._openbrowser), oldIdentity);
     const [upgraded] = await service.request('fingerprint:preview', { profileId: legacy.id, os: 'Windows' });
-    assert.equal(upgraded._fingerprintDraft.version, 2, 'explicit randomization retains the documented opt-in generation upgrade');
+    assert.equal(upgraded._fingerprintDraft.version, CURRENT_FINGERPRINT_VERSION, 'explicit randomization retains the documented opt-in generation upgrade');
     await service.request('profiles:update', { ...upgraded, id: legacy.id, rev: engine.profileForEdit(legacy.id).rev });
     assert.deepEqual(identity(engine.fingerprintFor(legacy.id)), identity(upgraded._openbrowser));
     const restored = new BrowserEngine({ getPath: () => root });
     await restored.init(null);
     restored.chooseBrowser = engine.chooseBrowser;
-    for (const [id] of engine.profiles)
-      assert.deepEqual(identity(restored.fingerprintFor(id)), identity(engine.fingerprintFor(id)), 'disk reload preserves the preview identity');
+    for (const [id] of engine.profiles) {
+      const beforeReload = engine.fingerprintFor(id), afterReload = restored.fingerprintFor(id);
+      assert.deepEqual(identity(afterReload), identity(beforeReload), 'disk reload preserves the preview identity');
+      assert.equal(afterReload.userAgent, beforeReload.userAgent, 'disk reload preserves the saved UA');
+    }
+    assert.equal(restored.fingerprintFor(deviceProfile.id).mac.value, devicePreview.macAddr);
+    assert.equal(restored.fingerprintFor(deviceProfile.id).deviceName, devicePreview.deviceName);
     console.log('FINGERPRINT_PREVIEW_IDENTITY_SELFTEST OK (create/edit/batch/import/clone/template replay and disk reload)');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
 }

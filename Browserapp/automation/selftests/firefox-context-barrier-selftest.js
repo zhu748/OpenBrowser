@@ -90,7 +90,12 @@ async function test(name, run) { await run();passed += 1;console.log('PASS ' + n
       assert.equal(h.calls.some((call) => call.method === 'browsingContext.navigate' && call.params.context === 'second'), false);
       gate.resolve({});await navigation;await Promise.all(h.notifications);
       const overrides = h.calls.filter((call) => call.method.startsWith('emulation.') && call.params.contexts?.[0] === 'second');
-      assert.deepEqual(overrides.map((call) => call.method), ['emulation.setUserAgentOverride', 'emulation.setTimezoneOverride', 'emulation.setGeolocationOverride']);
+      assert.deepEqual(overrides.map((call) => call.method), [
+        'emulation.setUserAgentOverride', 'emulation.setTimezoneOverride',
+        'emulation.setScreenSettingsOverride', 'emulation.setGeolocationOverride',
+      ]);
+      assert.deepEqual(h.calls.find(call => call.method === 'browsingContext.setViewport' && call.params.context === 'second')?.params,
+        { context: 'second', devicePixelRatio: fingerprint.screen.devicePixelRatio });
       const geoIndex = h.calls.findIndex((call) => call.method === 'emulation.setGeolocationOverride' && call.params.contexts?.[0] === 'second');
       assert.ok(geoIndex < h.calls.findIndex((call) => call.method === 'browsingContext.navigate' && call.params.context === 'second'));
     } finally { gate.resolve({});await navigation; }
@@ -129,6 +134,33 @@ async function test(name, run) { await run();passed += 1;console.log('PASS ' + n
     const h = fixture();await h.initialize();const count = h.calls.length;
     await h.emit('browsingContext.contextCreated', { context: 'child', parent: 'initial' });
     assert.equal(h.calls.length, count);
+  });
+  await test('unsupported native screen settings report degraded delivery', async () => {
+    const h = fixture({ emulate: (method) => {
+      if (method === 'emulation.setScreenSettingsOverride') throw Object.assign(new Error('unknown command'), { code: 'unknown command' });
+      return {};
+    } });
+    const initialized = await h.initialize();
+    assert.ok(initialized.warnings.some(warning => warning.includes('emulation.setScreenSettingsOverride')));
+    const fatal = fixture({ emulate: (method) => {
+      if (method === 'emulation.setScreenSettingsOverride') throw new Error('connection timed out');
+      return {};
+    } });
+    await assert.rejects(fatal.initialize(), /connection timed out/);
+  });
+  await test('a vanished Worker realm is benign while real injection failures reach the caller', async () => {
+    const h = fixture();
+    const errors = [];
+    await initializeFirefoxFingerprint(h.connection, fingerprint, profile, { onWorkerError: error => errors.push(error.message) });
+    const send = h.connection.command;
+    let failure = Object.assign(new Error('Realm with id short-lived not found'), { code: 'no such frame' });
+    h.connection.command = (method, params) => params?.target?.realm ? Promise.reject(failure) : send(method, params);
+    const realm = { realm: 'short-lived', type: 'dedicated-worker' };
+    await h.emit('script.realmCreated', realm);
+    assert.deepEqual(errors, []);
+    failure = new Error('script execution failed');
+    await h.emit('script.realmCreated', realm);
+    assert.deepEqual(errors, ['script execution failed']);
   });
   await test('older kernels retain the explicit fallback for unsupported context parameters', async () => {
     const h = fixture({ emulate: (method, params) => {

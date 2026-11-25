@@ -68,12 +68,19 @@ async function configureChrome(page, app, random, evidence) {
   await geo.getByRole('button', { name: '自定义', exact: true }).click();
   const longitude = basic.locator('input[name="longitude"]');
   assert.equal(await longitude.inputValue(), '');
+  const mac = advanced.locator('input[name="macAddr"]');
+  const deviceName = advanced.locator('input[name="deviceName"]');
+  const [previousName, previousMac] = await Promise.all([deviceName.inputValue(), mac.inputValue()]);
   const previewCount = await app.evaluate(() => globalThis.editorPreviewHistory.length);
   await random.click();
   await waitUntil(async () => await app.evaluate(() => globalThis.editorPreviewHistory.length) > previewCount);
+  const generated = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1).row._fingerprintDraft.generatedHardware);
+  await waitUntil(async () => (await deviceName.inputValue()) === generated.deviceName
+    && (await mac.inputValue()) === generated.macAddr);
+  assert.notEqual(generated.deviceName, previousName);
+  assert.notEqual(generated.macAddr, previousMac);
   await geo.getByRole('button', { name: '基于 IP 匹配', exact: true }).click();
 
-  const mac = advanced.locator('input[name="macAddr"]');
   assert.equal(await mac.isEditable(), true);
   const generatedMac = await mac.inputValue();
   const macFormat = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/;
@@ -108,10 +115,23 @@ async function configureChrome(page, app, random, evidence) {
   assert.equal(await mac.inputValue(), customMac);
   assert.equal(await vendor.inputValue(), customVendor);
   assert.equal(await renderer.inputValue(), customRenderer);
-  await selectOption(page, advanced, 'hardwareConcurrent', '6');
-  await selectOption(page, advanced, 'deviceMemory', '4');
+  assert.equal(await advanced.locator('#hardwareConcurrent').innerText(), '自动');
+  assert.equal(await advanced.locator('#deviceMemory').innerText(), '自动');
+  await selectOption(page, advanced, 'hardwareConcurrent', '跟随系统');
+  await selectOption(page, advanced, 'hardwareConcurrent', '自动');
+  await selectOption(page, advanced, 'hardwareConcurrent', '32');
+  await selectOption(page, advanced, 'deviceMemory', '0.5');
   await setting(advanced, '分辨率').getByRole('button', { name: '自定义', exact: true }).click();
   await selectOption(page, advanced, 'resolution', '1366 x 768');
+  await geo.getByRole('button', { name: '自定义', exact: true }).click();
+  await longitude.fill('0');
+  await basic.locator('input[name="latitude"]').fill('0');
+  const previewCountWithResolution = await app.evaluate(() => globalThis.editorPreviewHistory.length);
+  await random.click();
+  await waitUntil(async () => await app.evaluate(() => globalThis.editorPreviewHistory.length) > previewCountWithResolution);
+  const displayPreview = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1).payload);
+  assert.deepEqual([displayPreview.resolutionType, displayPreview.resolutionX, displayPreview.resolutionY], [true, '1366', '768']);
+  assert.deepEqual([displayPreview.isPositionBaseIp, String(displayPreview.latitude), String(displayPreview.longitude)], [false, '0', '0']);
   const languageMode = setting(basic, '界面语言');
   await languageMode.getByRole('button', { name: '自定义', exact: true }).click();
   const german = await page.evaluate(() => new Intl.DisplayNames(['zh-CN'], { type: 'language' }).of('de-DE'));
@@ -235,10 +255,11 @@ async function createFromTemplate(page, app) {
 }
 
 async function importLargeFile(page, app, root) {
-  const count = 101;
+  const count = 102;
   const prefix = '容量导入回归 ';
   const file = path.join(root, 'large-import.txt');
-  const rows = Array.from({ length: count }, (_, index) => `windowName=${prefix}${index + 1}\nos=Linux\ncoreType=Chrome`);
+  const rows = Array.from({ length: count }, (_, index) =>
+    `windowName=${prefix}${index + 1}\nos=${index === count - 1 ? 'IOS' : 'Linux'}\ncoreType=Chrome`);
   await fs.writeFile(file, rows.join('\n####\n'));
   await app.evaluate(({ dialog }, file) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
@@ -247,7 +268,7 @@ async function importLargeFile(page, app, root) {
   await page.getByRole('tab', { name: '窗口导入', exact: true }).click();
   const editor = page.locator('.profile-editor-viewport');
   await editor.getByRole('button', { name: '上传文件', exact: true }).click();
-  await editor.getByText('101 个窗口已成功导入', { exact: true }).waitFor();
+  await editor.getByText(`${count} 个窗口已成功导入`, { exact: true }).waitFor();
   const create = editor.getByRole('button', { name: '创建窗口', exact: true });
   await waitUntil(() => create.isEnabled());
   const previousPreviews = await app.evaluate(() => globalThis.editorPreviewHistory.length);
@@ -255,13 +276,18 @@ async function importLargeFile(page, app, root) {
   await page.waitForFunction(() => globalThis.__router.currentRoute.value.path !== '/browser/create');
   const imported = await page.evaluate(async prefix => (await globalThis.__localRequest('profiles:list'))
     .filter(profile => profile.windowName.startsWith(prefix))
-    .map(profile => ({ name: profile.windowName, sortNum: profile.sortNum, seed: profile.fingerprintSeed })), prefix);
+    .map(profile => ({ name: profile.windowName, sortNum: profile.sortNum, seed: profile.fingerprintSeed,
+      os: profile.os, osVersion: profile.osVersion, ua: profile.userAgent })), prefix);
   imported.sort((a, b) => a.sortNum - b.sortNum);
   assert.deepEqual(imported.map(row => row.name), rows.map(row => row.split('\n')[0].slice('windowName='.length)));
   assert.equal(new Set(imported.map(row => row.seed)).size, count);
-  const batchCounts = await app.evaluate((_host, start) => globalThis.editorPreviewHistory
-    .slice(start).map(({ payload }) => payload.count), previousPreviews);
-  assert.deepEqual(batchCounts, [100, 1]);
+  assert.equal(imported.at(-1).os, 'IOS');
+  assert.equal(imported.at(-1).osVersion, '');
+  assert.match(imported.at(-1).ua, /iPhone; CPU iPhone OS/);
+  const batches = await app.evaluate((_host, start) => globalThis.editorPreviewHistory
+    .slice(start).map(({ payload }) => ({ os: payload.os, count: payload.count, version: payload.osVersion })), previousPreviews);
+  assert.deepEqual(batches.filter(row => row.os === 'Linux').map(row => row.count), [100, 1]);
+  assert.deepEqual(batches.filter(row => row.os === 'IOS'), [{ os: 'IOS', count: 1, version: '' }]);
 }
 
 async function main() {
@@ -330,13 +356,13 @@ async function main() {
       assert.ok(originalOs >= 2, 'both real kernels are available');
       let previousUa = await readUa();
       const versionOf = value => value.match(/(?:Chrome|Firefox)\/([\d.]+)/)?.[1];
-      const branch = versionOf(previousUa).split('.').slice(0, -1).join('.');
+      const major = versionOf(previousUa).split('.')[0];
       const singleRandom = page.getByRole('button', { name: '随机', exact: true }).first();
       const wholeRandom = page.getByRole('button', { name: '一键随机指纹', exact: true });
       if (family === 'Firefox') {
         await page.getByText('Chrome', { exact: true }).first().click();
         await waitUntil(async () => (await readUa()).includes('Chrome/'));
-        assert.equal(await singleRandom.isDisabled(), false, 'returning to Chrome enables patch randomization');
+        assert.equal(await singleRandom.isDisabled(), false, 'returning to Chrome enables UA refresh');
         await page.getByText('Firefox', { exact: true }).first().click();
         await waitUntil(async () => (await readUa()).includes('Firefox/'));
         previousUa = await readUa();
@@ -346,20 +372,28 @@ async function main() {
         await singleRandom.scrollIntoViewIfNeeded();
         await page.screenshot({ path: path.join(evidence, 'firefox-native-ua-disabled.png') });
       }
-      for (const button of family === 'Firefox' ? [wholeRandom, wholeRandom] : [singleRandom, wholeRandom]) {
+      for (const button of family === 'Firefox' ? [wholeRandom, wholeRandom] : [singleRandom, singleRandom, wholeRandom]) {
         const before = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1));
         const previewCount = await app.evaluate(() => globalThis.editorPreviewHistory.length);
         await button.click();
         await waitUntil(async () => await app.evaluate(() => globalThis.editorPreviewHistory.length) > previewCount);
-        if (family === 'Chrome') await waitUntil(async () => { const value = await readUa(); return value && value !== previousUa; });
-        else assert.equal(await readUa(), previousUa);
         const latest = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1));
+        await waitUntil(async () => (await readUa()) === latest.row.userAgent);
         assert.equal(latest.payload.os, before.payload.os, 'randomization preserves the chosen OS');
         assert.equal(latest.payload.coreType, family);
         assert.equal(latest.row._fingerprintDraft.seed === before.row._fingerprintDraft.seed, button === singleRandom);
-        assert.equal(versionOf(latest.row.userAgent).split('.').slice(0, -1).join('.'), branch);
-        assert.ok(family === 'Firefox' || Number(versionOf(latest.row.userAgent).split('.').at(-1)) >= 1);
-        assert.equal(latest.row._fingerprintDraft.uaPatchRandomized, family === 'Chrome');
+        if (button === singleRandom) {
+          assert.equal(latest.payload.previousUserAgent, previousUa);
+          assert.equal(latest.row._fingerprintDraft.uaVersionRandomized, true);
+          assert.equal(versionOf(latest.row.userAgent), latest.row._fingerprintDraft.clientHints.ua_full_version);
+          const versions = require('../automation/data/chrome-release-versions.json').versions.windows[major] || [];
+          if (versions.length > 1) assert.notEqual(latest.row.userAgent, previousUa);
+        } else {
+          assert.equal(versionOf(latest.row.userAgent), family === 'Firefox' ? major + '.0' : major + '.0.0.0');
+        }
+        if (family === 'Chrome')
+          assert.equal(latest.row._fingerprintDraft.clientHints.ua_full_version.split('.')[0], major);
+        assert.equal(latest.row._fingerprintDraft.uaPatchRandomized, false);
         previousUa = await readUa();
       }
       if (family === 'Chrome') await configureChrome(page, app, wholeRandom, evidence);
@@ -372,11 +406,15 @@ async function main() {
       assert.equal(saved.fingerprintSeed, expected._fingerprintDraft.seed);
       assert.equal(saved.id, expected._fingerprintDraft.profileId, 'creation accepts the preview UUID');
       assert.equal(saved.privacy.fingerprint.uaGenerated, true);
-      assert.equal(saved.privacy.fingerprint.uaPatchRandomized, family === 'Chrome');
+      assert.equal(saved.privacy.fingerprint.uaPatchRandomized, false);
       if (family === 'Chrome') {
         assert.equal(saved.privacy.mac, customMac);
-        assert.equal(saved.privacy.cores, 6);
-        assert.equal(saved.privacy.memory, 4);
+        assert.equal(saved.privacy.deviceName, '');
+        assert.equal(await app.evaluate((_host, id) => globalThis.editorTestEngine.fingerprintFor(id).deviceName, saved.id),
+          expected.deviceName);
+        assert.equal(saved.privacy.cores, 32);
+        assert.equal(saved.privacy.memory, 0.5);
+        assert.deepEqual([saved.privacy.geoMode, saved.privacy.latitude, saved.privacy.longitude], ['custom', 0, 0]);
         assert.equal(saved.privacy.fingerprint.screenWidth, 1366);
         assert.equal(saved.privacy.fingerprint.screenHeight, 768);
         assert.equal(saved.privacy.fingerprint.webglVendor, customVendor);
@@ -390,7 +428,8 @@ async function main() {
           const parts = version.split('.');parts[parts.length - 1] = parts.at(-1) === '1' ? '2' : '1';return product + parts.join('.');
         });
         const screen = current.engine === 'chromium' ? { screenWidth: 1600, screenHeight: 1000 } : {};
-        await engine.syncProfiles([{ ...current, privacy: { ...current.privacy,
+        const location = current.engine === 'chromium' ? { geoMode: 'disabled' } : {};
+        await engine.syncProfiles([{ ...current, privacy: { ...current.privacy, ...location,
           fingerprint: { ...current.privacy.fingerprint, ...screen, userAgent } } }]);
         return userAgent;
       }, saved.id);
@@ -412,11 +451,17 @@ async function main() {
       if (family === 'Chrome') {
         const basic = await settingsPanel(page, '基础设置');
         const advanced = await settingsPanel(page, '高级指纹设置');
+        const geoPermission = setting(basic, '地理位置提示');
+        const longitude = basic.locator('input[name="longitude"]');
+        await geoPermission.getByRole('button', { name: '禁止', exact: true, pressed: true }).waitFor();
+        await longitude.waitFor({ state: 'hidden' });
+        await geoPermission.getByRole('button', { name: '允许', exact: true }).click();
+        assert.equal(await longitude.inputValue(), '0');
         await setting(basic, '界面语言').getByRole('button', { name: '基于 IP 匹配', exact: true }).click();
         await basic.locator('#language').waitFor({ state: 'hidden' });
         assert.equal(await advanced.locator('input[name="macAddr"]').inputValue(), customMac);
-        assert.equal(await advanced.locator('#hardwareConcurrent').innerText(), '6');
-        assert.equal(await advanced.locator('#deviceMemory').innerText(), '4');
+        assert.equal(await advanced.locator('#hardwareConcurrent').innerText(), '32');
+        assert.equal(await advanced.locator('#deviceMemory').innerText(), '0.5');
         assert.equal(await advanced.locator('#resolution').innerText(), '1600 x 1000');
       }
       await page.getByRole('button', { name: '保存', exact: true }).click();
@@ -424,9 +469,11 @@ async function main() {
       const edited = await page.evaluate(id => globalThis.__localRequest('profiles:read', { id }), saved.id);
       assert.equal(edited.userAgent, editedUa);
       assert.equal(edited.privacy.fingerprint.userAgent, undefined, 'saving migrates the old hidden override');
-      assert.equal(edited.privacy.fingerprint.uaPatchRandomized, family === 'Chrome', 'editing keeps the selected engine UA policy');
+      assert.equal(edited.privacy.fingerprint.uaPatchRandomized, false, 'editing keeps the selected engine UA policy');
+      assert.equal(edited.privacy.fingerprint.uaVersionRandomized, family === 'Chrome');
       if (family === 'Chrome') {
         assert.equal(edited.privacy.uiLanguage, 'ip');
+        assert.deepEqual([edited.privacy.geoMode, edited.privacy.geoPermission], ['custom', 'allow']);
         assert.equal(edited.privacy.fingerprint.screenWidth, 1600);
         assert.equal(edited.privacy.fingerprint.screenHeight, 1000);
       }

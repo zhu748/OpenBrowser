@@ -10,7 +10,7 @@
  *   probeBrowserBinary/probeFirefoxBinary are stubbed to pass (the stub is not
  *   a real browser).
  *
- * Verifies: user.js written with proxy/UA/telemetry prefs before spawn,
+ * Verifies: user.js written with direct connection, UA and telemetry prefs before spawn,
  * running item shape (engine:'firefox', port:null, connection:null), start
  * progress events, stop() kills the process and releases the profile lock, and
  * startup diagnostics are written on failure.
@@ -41,15 +41,11 @@ const IS_LINUX = process.platform === 'linux';
 // Test the production orchestration with loopback resource fixtures. Browser
 // and TLS behavior are covered by the native Firefox gates, not these stubs.
 const proxyModule = require('../../proxy-forwarder');
-const mitmModule = require('../firefox-worker-mitm-proxy');
-const trustModule = require('../firefox-trust-installer');
-const originals = { bridge: proxyModule.startAuthenticatedProxy, mitm: mitmModule.FirefoxWorkerMitmProxy, trust: trustModule.installFirefoxCa };
+const originalBridge = proxyModule.startAuthenticatedProxy;
 const proxyResources = [];
 const bridgeConfigs = [];
-let rejectTrust = false;
 class ProxyFixture {
-  static async create(options) { return new this(options); }
-  constructor(options = {}) { this.options = options; this.ca = { cert: Buffer.from('fixture') }; proxyResources.push(this); }
+  constructor() { proxyResources.push(this); }
   async start() {
     this.server = net.createServer((socket) => socket.destroy());
     await new Promise((resolve) => this.server.listen(0, '127.0.0.1', resolve));
@@ -60,8 +56,6 @@ class ProxyFixture {
   close() { return this.closing ||= new Promise((resolve) => { this.closed = true; this.server.close(resolve); }); }
 }
 proxyModule.startAuthenticatedProxy = async (config) => { bridgeConfigs.push(config); return new ProxyFixture().start(); };
-mitmModule.FirefoxWorkerMitmProxy = ProxyFixture;
-trustModule.installFirefoxCa = () => ({ ok: !rejectTrust, reason: rejectTrust ? 'fixture-import-failed' : undefined });
 const { BrowserEngine } = require('../../engine');
 const { writeFirefoxLaunchPreferences } = require('../../engine/launch-preferences');
 const { firefoxExtraUserPrefs } = require('../../engine/start-firefox');
@@ -112,6 +106,7 @@ function makeStubFirefox(tmp) {
   const originalWebSocket = global.WebSocket;
   const commands = [];
   let rejectPreload = false;
+  let rejectFilter = false;
   const remote = (value) => {
     if (value === null) return { type: 'null' };
     if (Array.isArray(value)) return { type: 'array', value: value.map(remote) };
@@ -138,7 +133,9 @@ function makeStubFirefox(tmp) {
           ? remote({ platform: fp.platform, userAgent: fp.userAgent, hardwareConcurrency: fp.hardwareConcurrency, languages: fp.languages, timezone: fp.timezone, vendor: '', screenWidth: fp.screen.width, screenHeight: fp.screen.height, devicePixelRatio: fp.screen.devicePixelRatio })
           : { type: 'undefined' } };
       }
-      const response = rejectPreload && command.method === 'script.addPreloadScript'
+      const response = rejectFilter && command.method === 'webExtension.install'
+        ? { type: 'error', id: command.id, error: 'unknown error', message: 'test Worker filter rejected' }
+        : rejectPreload && command.method === 'script.addPreloadScript'
         ? { type: 'error', id: command.id, error: 'unknown error', message: 'test preload rejected' }
         : { type: 'success', id: command.id, result };
       queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(response) })));
@@ -203,15 +200,17 @@ function makeStubFirefox(tmp) {
       assert.strictEqual(item.browser.engine, 'firefox');
       assert.ok(item.bidiConnection);
       assert.strictEqual(started.capabilities.fingerprintDelivery, true);
-      assert.strictEqual(started.capabilities.workerFingerprintDelivery, 'prefs-fields-plus-proxy');
+      assert.strictEqual(started.capabilities.workerFingerprintDelivery, 'browser-response-filter');
+      assert.strictEqual(started.capabilities.externalHttpsTransport, 'native');
       assert.strictEqual(started.capabilities.localWorkerResponseFilter, true);
-      assert.ok(item.workerMitmProxy);
+      assert.equal(item.proxyForwarder, null, 'direct mode uses the Firefox network stack');
       assert.match(item.fingerprint.userAgent, /Firefox\/141\.0$/);
     });
 
-    await check('user.js written before spawn with proxy/UA/telemetry prefs', () => {
+    await check('user.js written before spawn with direct connection, UA and telemetry prefs', () => {
       const copied = fs.readFileSync(path.join(markerDir, 'user.js.copy'), 'utf8');
-      assert.ok(copied.includes('user_pref("network.proxy.type", 1);'), 'manual proxy mode');
+      assert.ok(copied.includes('user_pref("network.proxy.type", 1);'), 'direct mode uses empty manual endpoints');
+      assert.ok(copied.includes('user_pref("network.proxy.ssl", "");'), 'do not inherit a previous launch proxy');
       assert.ok(copied.includes('user_pref("general.useragent.override",'), 'UA override');
       assert.ok(copied.includes('user_pref("intl.accept_languages", "de-DE,en-US");'), 'native language list');
       assert.ok(copied.includes('user_pref("intl.locale.requested", "de-DE");'), 'native locale follows the resolved list');
@@ -248,16 +247,15 @@ function makeStubFirefox(tmp) {
       let alive = false;
       try { process.kill(stopped.pid, 0); alive = true; } catch (_) {}
       assert.strictEqual(alive, false, 'stub firefox must be dead after stop');
-      assert.strictEqual(item.workerMitmProxy.closed, true, 'worker listener must close on normal stop');
       assert.ok(commands.some((command) => command.method === 'browser.close'), 'Firefox stop uses native BiDi close');
     });
     await check('status event emitted after stop', () => {
       assert.ok(events.some((e) => e.type === 'status' && e.id === 'env-900' && e.running === false));
     });
-    await check('a local Worker forwarder cannot satisfy a missing upstream proxy', async () => {
+    await check('a missing required upstream proxy blocks launch', async () => {
       const before = proxyResources.length;
       await assert.rejects(engine.start({ ...engine.profiles.get(profile.id), networkMode: 'proxy', proxy: 'Direct' }), { code: 'proxy-required' });
-      assert.equal(proxyResources.length, before, 'invalid route rejected before local forwarder allocation');
+      assert.equal(proxyResources.length, before, 'invalid route rejected before bridge allocation');
       assert.equal(engine.running.has(profile.id), false);
     });
     for (const proxy of ['http://proxy.test:8080', 'https://proxy.test:8443', 'http://user:pass@proxy.test:8080', 'socks5://user:pass@proxy.test:1080']) {
@@ -268,23 +266,24 @@ function makeStubFirefox(tmp) {
         const current = engine.running.get(profile.id);
         assert.equal(bridgeConfigs.length, before + 1, 'every configured proxy must create a bridge');
         assert.equal(bridgeConfigs.at(-1).host, 'proxy.test');
-        assert.deepEqual(Object.keys(current.workerMitmProxy.options.upstreamProxy).sort(), ['host', 'port'], 'credentials belong to the bridge');
-        assert.equal(current.workerMitmProxy.options.upstreamProxy.host, '127.0.0.1');
-        assert.equal(current.workerMitmProxy.options.upstreamProxy.port, current.proxyForwarder.port);
+        const prefs = fs.readFileSync(path.join(markerDir, 'user.js.copy'), 'utf8');
+        assert.ok(prefs.includes('user_pref("network.proxy.type", 1);'));
+        assert.ok(prefs.includes('user_pref("network.proxy.ssl_port", ' + current.proxyForwarder.port + ');'));
+        assert.doesNotMatch(prefs, /proxy\.test|user:pass/);
         await engine.stop(profile.id);
-        assert.equal(current.workerMitmProxy.closed, true);
         assert.equal(current.proxyForwarder.closed, true);
       });
     }
-    await check('failed CA trust blocks spawn and closes both proxies', async () => {
-      rejectTrust = true;
+    await check('failed Worker filter blocks navigation and closes the explicit proxy bridge', async () => {
+      rejectFilter = true;
       try {
-        const before = commands.length;
-        await assert.rejects(engine.start({ ...engine.profiles.get(profile.id) }), { code: 'WORKER_MITM_CA_IMPORT_FAILED' });
-        assert.equal(commands.length, before, 'no browser commands before CA trust');
+        const before = commands.filter(command => command.method === 'browsingContext.navigate').length;
+        const candidate = { ...engine.profiles.get(profile.id), networkMode: 'proxy', proxy: 'http://proxy.test:8080' };
+        await assert.rejects(engine.start(candidate), /test Worker filter rejected/);
+        assert.equal(commands.filter(command => command.method === 'browsingContext.navigate').length, before);
         assert.equal(engine.running.has(profile.id), false);
-        assert.ok(proxyResources.every((resource) => resource.closed));
-      } finally { rejectTrust = false; }
+        assert.ok(proxyResources.every(resource => resource.closed));
+      } finally { rejectFilter = false; }
     });
     rejectPreload = true;
     const beforeFailure = commands.filter((command) => command.method === 'browsingContext.navigate').length;
@@ -301,9 +300,7 @@ function makeStubFirefox(tmp) {
     unsubscribe();
     await engine.stopAll().catch(() => {});
     global.WebSocket = originalWebSocket;
-    proxyModule.startAuthenticatedProxy = originals.bridge;
-    mitmModule.FirefoxWorkerMitmProxy = originals.mitm;
-    trustModule.installFirefoxCa = originals.trust;
+    proxyModule.startAuthenticatedProxy = originalBridge;
     await fsp.rm(tmp, { recursive: true, force: true }).catch(() => {});
   }
 

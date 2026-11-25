@@ -5,6 +5,8 @@ const http = require('node:http');
 const h = require('./native-gate-harness');
 const { buildFingerprint } = require('../fingerprint');
 const { buildUaProfile } = require('../user-agent');
+const { sanitizeProfile } = require('../../engine/profile-sanitizer');
+const { CURRENT_FINGERPRINT_VERSION } = require('../fingerprint/generation');
 const { buildEditorUa } = require('../editor-ua');
 
 async function snapshot() {
@@ -12,6 +14,7 @@ async function snapshot() {
     'architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'uaFullVersion', 'formFactors', 'wow64',
   ]));
   return { ua: navigator.userAgent, appVersion: navigator.appVersion, platform: navigator.platform,
+    cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory,
     hints, headers: await (await fetch('/headers')).json() };
 }
 
@@ -33,6 +36,8 @@ function verify(actual, fp, reference, label) {
   assert.equal(actual.ua, fp.userAgent, label + ' JS UA');
   assert.equal(actual.appVersion, fp.uaProfile.appVersion, label + ' appVersion');
   assert.equal(actual.platform, fp.platform, label + ' Navigator platform');
+  assert.equal(actual.cores, fp.hardwareConcurrency, label + ' logical processors');
+  assert.equal(actual.memory, fp.deviceMemory, label + ' device memory');
   for (const field of ['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'uaFullVersion', 'platform', 'mobile', 'brands', 'wow64'])
     assert.deepEqual(actual.hints[field], fp.userAgentMetadata[field], label + ' Client Hint ' + field);
   if (actual.borrowedHints) {
@@ -84,23 +89,42 @@ async function main() {
   const origin = 'http://127.0.0.1:' + server.address().port;
   let reference;
   try {
-    for (const os of [null, 'Windows', 'Android', 'Windows full UA', 'Windows random patch']) {
-      const persona = h.buildPersona('ua-contract-' + (os || 'baseline').replaceAll(' ', '-'), { os: os?.startsWith('Windows') ? 'Windows' : os || 'Windows', kernelVersion: browser.version });
+    for (const os of [null, 'Windows', 'macos_arm', 'Linux', 'Android', 'Windows full UA', 'Windows generated UA']) {
+      const persona = h.buildPersona('ua-contract-' + (os || 'baseline').replaceAll(' ', '-'), {
+        os: os?.startsWith('Windows') ? 'Windows' : os || 'Windows', kernelVersion: browser.version, fingerprintVersion: CURRENT_FINGERPRINT_VERSION,
+        seed: os === 'Windows' ? 'catalog-v4-96' : undefined,
+      });
+      assert.equal(persona.fingerprint.generationVersion, CURRENT_FINGERPRINT_VERSION);
+      if (os === 'Linux') assert.equal(persona.fingerprint.userAgentMetadata.platformVersion, '');
+      if (os === 'Windows') assert.match(persona.fingerprint.webgl.renderer, /Radeon 8060S/);
+      if (os === 'Android') {
+        persona.profile.privacy.fingerprint.clientHints = { deviceModel: 'SM-F956U' };
+        persona.fingerprint = buildFingerprint({ ...persona.profile, kernelVersion: browser.version });
+        assert.equal(persona.fingerprint.clientHints.deviceModel, 'SM-F956U');
+        assert.match(persona.fingerprint.webgl.renderer, /Adreno.*750/);
+      }
       if (os === 'Windows full UA') {
         persona.profile.userAgent = buildUaProfile({ os: 'Windows', chromeMajor: Number(browser.version.split('.')[0]), chromeFull: browser.version, reduced: false }).userAgent;
         Object.assign(persona.profile.privacy.fingerprint, { uaGenerated: true, uaReduced: false });
         persona.fingerprint = buildFingerprint({ ...persona.profile, kernelVersion: browser.version });
         assert.ok(persona.fingerprint.userAgent.includes('Chrome/' + browser.version));
       }
-      if (os === 'Windows random patch') {
-        const generated = buildEditorUa({ profiles: new Map(), chooseBrowser: () => browser }, { os: 'Windows', random: true,
-          previousUserAgent: 'Chrome/' + browser.version });
+      if (os === 'Windows generated UA') {
+        const versions = require('../data/chrome-release-versions.json').versions.windows[browser.version.split('.')[0]] || [];
+        const previous = versions.includes(browser.version) ? browser.version : versions[0];
+        const generated = buildEditorUa({ profiles: new Map(), chooseBrowser: () => browser },
+          { os: 'Windows', random: true, previousUserAgent: `Chrome/${previous}` });
         persona.profile.userAgent = generated.userAgent;
-        Object.assign(persona.profile.privacy.fingerprint, { uaGenerated: true, uaPatchRandomized: true, clientHints: generated.clientHints });
+        Object.assign(persona.profile.privacy.fingerprint, { uaGenerated: generated.kernelBound, uaReduced: generated.uaReduced,
+          uaVersionRandomized: generated.uaVersionRandomized, clientHints: generated.clientHints });
+        Object.assign(persona.profile.privacy, { cores: 32, memory: 0.5 });
+        persona.profile = sanitizeProfile(persona.profile);
         persona.fingerprint = buildFingerprint({ ...persona.profile, kernelVersion: browser.version });
         assert.equal(persona.fingerprint.userAgent, generated.userAgent);
         assert.equal(persona.fingerprint.userAgentMetadata.fullVersion, generated.chromeFull);
-        assert.notEqual(generated.chromeFull, browser.version);
+        assert.deepEqual([persona.fingerprint.hardwareConcurrency, persona.fingerprint.deviceMemory], [32, 0.5]);
+        assert.ok((versions.length ? versions : [browser.version]).includes(generated.chromeFull));
+        if (versions.length > 1) assert.notEqual(generated.chromeFull, previous);
       }
       const run = await h.launchPersonaBrowser(browser, persona, { injectFingerprint: os !== null });
       let page;

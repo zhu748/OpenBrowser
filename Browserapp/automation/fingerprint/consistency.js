@@ -86,11 +86,13 @@ function fingerprintConsistencyIssues(fp) {
   // Reduced macOS UAs report 10_15_7 on current systems too. Client Hints
   // carry the actual release; only Windows legacy NT tokens are unambiguous.
   const windowsRelease = String(fp?.userAgent || '').match(/Windows NT (6\.1|6\.2|6\.3)/i)?.[1];
-  const fpOsVersion = String(fp?.osVersion || (uaOs === 'macos' || uaOs === 'macos_arm'
+  const selectedOsVersion = fp?.osVersion === 'all' ? '' : fp?.osVersion;
+  const fpOsVersion = String(selectedOsVersion || (uaOs === 'macos' || uaOs === 'macos_arm'
     ? String(metadata?.platformVersion || '').split('.').slice(0, 2).join('.')
-    : ({ '6.1': '7', '6.2': '8', '6.3': '8.1' }[windowsRelease] || ''))).trim();
+    : uaOs === 'android' ? fp.mobileDevice?.osVersion
+      : ({ '6.1': '7', '6.2': '8', '6.3': '8.1' }[windowsRelease] || ''))).trim();
   const osChromeViolation = fpOsVersion && fpChromeMajor
-    ? osChromeSupportViolation({ id: uaOs }, fpOsVersion, fpChromeMajor)
+    ? osChromeSupportViolation({ id: uaOs }, fpOsVersion, fpChromeMajor, fp.generationVersion)
     : null;
   if (osChromeViolation) {
     add('os-chrome-support-mismatch', `Chrome ${fpChromeMajor} never shipped on ${osChromeViolation.osId} ${osChromeViolation.osVersion} (last supporting major: ${osChromeViolation.maxChromeMajor}).`, 'error');
@@ -104,8 +106,15 @@ function fingerprintConsistencyIssues(fp) {
   if (fp?.mobile && !(Number(fp?.maxTouchPoints) > 0)) {
     add('mobile-touch-missing', 'A mobile profile must expose touch points.', 'error');
   }
-  if (fp?.mobile && fp?.mobileDevice && Number(fp.mobileDevice.screen?.width) !== Number(fp?.screen?.width)) {
-    add('mobile-screen-mismatch', 'The reported screen must be the panel of the sampled device.');
+  if (fp?.mobile && fp?.mobileDevice) {
+    const { screen: mobileScreen, viewport } = fp.mobileDevice;
+    if (mobileScreen?.width !== fp.screen?.width || mobileScreen?.height !== fp.screen?.height) {
+      add('mobile-screen-mismatch', 'The mobile emulation screen and reported screen must agree.');
+    }
+    if (viewport && (!(viewport.width > 0 && viewport.height > 0)
+      || viewport.width > fp.screen?.width || viewport.height > fp.screen?.height)) {
+      add('mobile-viewport-invalid', 'The configured mobile viewport must fit within the screen.', 'error');
+    }
   }
   const screen = fp?.screen || {};
   if (!(Number(screen.width) > 0 && Number(screen.height) > 0 && Number(screen.availWidth) > 0 && Number(screen.availHeight) > 0)) {

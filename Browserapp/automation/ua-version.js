@@ -1,6 +1,7 @@
 'use strict';
 
-const crypto = require('node:crypto');
+const { randomInt } = require('node:crypto');
+const publishedVersions = require('./data/chrome-release-versions.json').versions;
 
 function versionParts(version, engine) {
   const text = String(version || '');
@@ -17,18 +18,6 @@ function productVersion(userAgent, engine) {
     : /(?:Chrome|Chromium|CriOS)\/(\d+\.\d+\.\d+\.\d+)(?![\d.])/i)?.[1];
 }
 
-// Preserve the selected kernel's branch and sample a patch in [1, 255],
-// uniformly excluding the last displayed value when it belongs to this branch.
-function randomUaPatchVersion(kernelVersion, { engine = 'chromium', previousUserAgent = '', randomInt = crypto.randomInt } = {}) {
-  const prefix = versionParts(kernelVersion, engine).join('.');
-  const previous = productVersion(previousUserAgent, engine);
-  const patch = previous?.startsWith(prefix + '.') ? Number(previous.split('.').at(-1)) : 0;
-  const excluded = Number.isInteger(patch) && patch >= 1 && patch <= 255 ? patch : 0;
-  let selected = randomInt(excluded ? 254 : 255) + 1;
-  if (excluded && selected >= excluded) selected++;
-  return prefix + '.' + selected;
-}
-
 // A saved random patch survives launch and reload. If the selected kernel is
 // upgraded, carry the patch onto the new branch while following its major.
 function resolveUaPatchVersion(kernelVersion, userAgent, engine = 'chromium') {
@@ -39,4 +28,21 @@ function resolveUaPatchVersion(kernelVersion, userAgent, engine = 'chromium') {
   return [...versionParts(kernelVersion, engine), String(patch)].join('.');
 }
 
-module.exports = { randomUaPatchVersion, resolveUaPatchVersion };
+function publishedVersionsFor(kernelVersion, os) {
+  const major = String(kernelVersion).match(/^(\d+)(?:\.|$)/)?.[1];
+  return major && Object.hasOwn(publishedVersions, os) ? publishedVersions[os][major] || [] : [];
+}
+
+function pickPublishedChromeVersion(kernelVersion, os, previousUserAgent) {
+  const previous = productVersion(previousUserAgent, 'chromium');
+  const versions = publishedVersionsFor(kernelVersion, os);
+  const candidates = versions.length > 1 ? versions.filter(version => version !== previous) : versions;
+  return candidates.length ? candidates[randomInt(candidates.length)] : kernelVersion;
+}
+
+function resolvePublishedChromeVersion(kernelVersion, os, userAgent) {
+  const version = productVersion(userAgent, 'chromium');
+  return publishedVersionsFor(kernelVersion, os).includes(version) ? version : kernelVersion;
+}
+
+module.exports = { resolveUaPatchVersion, pickPublishedChromeVersion, resolvePublishedChromeVersion };

@@ -49,7 +49,8 @@ function useWindowCreate(options = {}) {
       syncMobileVisibility();
       if (refreshFingerprint && hasConcreteKernel()) {
         const preserve = preserveSettings
-          ? ['hardwareConcurrent', 'deviceMemory', 'deviceName'].filter(key => profile[key] != null && profile[key] !== '')
+          ? ['hardwareConcurrent', 'deviceMemory', 'deviceName'].filter(key => profile[key] != null && profile[key] !== ''
+            && profile[key] !== profile._fingerprintDraft?.generatedHardware?.[key])
           : [];
         if (preserveSettings && profile._custom_ua === true) preserve.push('userAgent');
         await updateFingerprint(undefined, { preserve });

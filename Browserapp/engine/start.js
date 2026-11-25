@@ -608,7 +608,11 @@ module.exports = {
           });
 
           throw Object.assign(new Error(item.fingerprintVerificationError || '指纹未按配置交付，已停止浏览器'), { code: 'FINGERPRINT_DELIVERY_FAILED' });
-        } else if (startUrl) {
+        }
+        item.fingerprintWarnings = [...new Set([
+          ...(item.fingerprintWarnings || []), ...(deliveryResult.warnings || []),
+        ])];
+        if (startUrl) {
           await fpLog('start.navigate-startpage', { profileId: profile.id, startUrl });
           try {
             await openVerifiedStartupTabs(this, item, [startUrl, ...customStartUrls.slice(1)]);

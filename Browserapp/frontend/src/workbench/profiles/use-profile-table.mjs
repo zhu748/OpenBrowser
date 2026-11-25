@@ -79,7 +79,7 @@ export function useProfileTable(props, emit) {
     const activation = profileActivation;
     if (await vr() && activation === profileActivation) refresh(props.currentFilter._params ?? {}, !1);
   }
-  let { singleModifyWindow: br2, batchModifyWindow: xr, updateProfileMeta: updateLabels } = Xt({ onlyErrorToast: K2, onRefreshTable: refresh, invalidateListCache: ur }), { onUpgradeCore: Cr } = En({ batchModifyWindow: xr, onlyErrorToast: K2, showToast: G2, getWorkspaceName: () => workspaceName.value });
+  let { singleModifyWindow: br2, batchModifyWindow: xr, updateProfileMeta: updateLabels } = Xt({ onlyErrorToast: K2, onRefreshTable: refresh, invalidateListCache: ur }), { onUpgradeCore: Cr } = En({ onlyErrorToast: K2, showToast: G2, getWorkspaceName: () => workspaceName.value });
   const { confirmation: deleteConfirmation, request: requestProfileDelete } = useProfileDelete({
     ref: S, watch: ue, onBeforeUnmount: x,
     scope: () => JSON.stringify([rn.currentWorkspace?.id, g2.name, projectDetailId(g2),

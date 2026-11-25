@@ -3,7 +3,8 @@
 // Workbench DTO translation belongs here, independently of routing and persistence.
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../engine/profile-sanitizer");
-const { resolveDoNotTrackMode } = require('../shared/profile-values');
+const { resolveDoNotTrackMode, resolveFingerprintDeviceSettings, geolocationUsesIp } = require('../shared/profile-values');
+const { CURRENT_FINGERPRINT_VERSION } = require('../automation/fingerprint/generation');
 
 const { labelIdsOf, ADVANCED_FIELDS, NOISE_FIELDS, parseWindowPosition, formatWindowPosition } = require('./profile-fields');
 
@@ -29,7 +30,7 @@ function fromRoxy(v, base = {}) {
     engineVersion: v.useLatestCore
       ? "latest"
       : (v.coreVersion ?? base.engineVersion),
-    fingerprintVersion: base.fingerprintVersion || 2,
+    fingerprintVersion: base.fingerprintVersion || CURRENT_FINGERPRINT_VERSION,
     os: v.os ?? base.os ?? "Windows",
     language: v.displayLanguage ?? v.language ?? base.language ?? "en-US",
     note: v.windowRemark ?? base.note ?? "",
@@ -58,6 +59,8 @@ function fromRoxy(v, base = {}) {
     advanced: { ...base.advanced },
   };
   const draft = v._fingerprintDraft;
+  const isGeneratedHardware = (key) => Object.hasOwn(draft?.generatedHardware || {}, key)
+    && v[key] === draft.generatedHardware[key];
   if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
     mapped.fingerprintSeed = String(draft.seed || '');
     mapped.fingerprintVersion = draft.version;
@@ -134,6 +137,9 @@ function fromRoxy(v, base = {}) {
   };
   for (const [source, target] of Object.entries(privacyMap))
     if (Object.hasOwn(v, source)) mapped.privacy[target] = v[source];
+  if (isGeneratedHardware('hardwareConcurrent')) mapped.privacy.cores = null;
+  if (isGeneratedHardware('deviceMemory')) mapped.privacy.memory = null;
+  if (isGeneratedHardware('deviceName')) mapped.privacy.deviceName = '';
   if (Object.hasOwn(v, "isDisplayLanguageBaseIp"))
     mapped.privacy.languageMode = v.isDisplayLanguageBaseIp ? "ip" : "profile";
   if (v.isLanguageBaseIp === true) mapped.privacy.uiLanguage = "ip";
@@ -168,8 +174,8 @@ function fromRoxy(v, base = {}) {
   for (const [source, target] of Object.entries(NOISE_FIELDS))
     if (Object.hasOwn(v, source))
       mapped.privacy[target] = v[source] ? "noise" : "real";
-  if (Object.hasOwn(v, "webRTC"))
-    mapped.privacy.webrtc = { 0: "proxy", 1: "real", 2: "disabled" }[v.webRTC];
+  const webrtc = Object.hasOwn(v, 'webRTC') && ['proxy', 'real', 'disabled'][v.webRTC];
+  if (typeof webrtc === 'string') mapped.privacy.webrtc = webrtc;
   if (Object.hasOwn(v, "webGLInfo"))
     mapped.privacy.webglMeta = { 0: "real", 1: "noise", 2: "custom" }[
       v.webGLInfo
@@ -183,10 +189,13 @@ function fromRoxy(v, base = {}) {
     mapped.privacy.dnt = enabled;
     mapped.privacy.dntMode = enabled ? 'on' : keepsDefault ? 'default' : 'off';
   }
-  if (Object.hasOwn(v, "position"))
-    mapped.privacy.geoPermission = { 0: "prompt", 1: "allow", 2: "deny" }[
-      v.position
-    ];
+  const geoPermission = Object.hasOwn(v, 'position') && ['prompt', 'allow', 'deny'][v.position];
+  if (typeof geoPermission === 'string') {
+    mapped.privacy.geoPermission = geoPermission;
+    // Legacy profiles encoded permission and source in the same field.
+    if (mapped.privacy.geoMode === 'disabled' || mapped.privacy.geoMode === 'prompt')
+      mapped.privacy.geoMode = geolocationUsesIp(mapped.privacy) ? 'ip' : 'custom';
+  }
   if (Object.hasOwn(v, "isTimeZone"))
     mapped.privacy.timezoneMode = v.isTimeZone ? "ip" : "custom";
   if (Object.hasOwn(v, "isPositionBaseIp"))
@@ -209,6 +218,15 @@ function fromRoxy(v, base = {}) {
       : null;
   }
   const fp = { ...mapped.privacy.fingerprint };
+  if (typeof webrtc === 'string') delete fp.webrtc;
+  for (const [field, override] of [
+    ['deviceNameSwitch', 'deviceNameMode'], ['deviceName', 'deviceName'],
+    ['macInfo', 'macMode'], ['macAddr', 'mac'],
+    ['hardwareConcurrent', 'cores'], ['hardwareConcurrent', 'hardwareConcurrency'],
+    ['deviceMemory', 'memory'], ['deviceMemory', 'deviceMemory'],
+  ]) {
+    if (Object.hasOwn(v, field)) delete fp[override];
+  }
   const previousUa = base.privacy?.fingerprint?.userAgent || base.userAgent || '';
   // The editor exposes one UA. Promote an explicit edit to that canonical
   // field instead of letting an old hidden override win during injection.
@@ -218,22 +236,28 @@ function fromRoxy(v, base = {}) {
     fp.uaGenerated = generated;
     if (generated) {
       fp.uaReduced = draft.uaReduced !== false;
+      fp.uaVersionRandomized = mapped.engine !== 'firefox' && draft.uaVersionRandomized === true;
       fp.uaPatchRandomized = draft.uaPatchRandomized === true;
       fp.clientHints = draft.clientHints || {};
     } else if (mapped.userAgent !== previousUa) {
       delete fp.uaReduced;
+      delete fp.uaVersionRandomized;
       delete fp.uaPatchRandomized;
       delete fp.clientHints;
     }
   } else if (Object.hasOwn(v, 'userAgent') && mapped.userAgent !== previousUa) {
     fp.uaGenerated = false;
     delete fp.uaReduced;
+    delete fp.uaVersionRandomized;
     delete fp.uaPatchRandomized;
     delete fp.clientHints;
   }
-  if (Object.hasOwn(v, "webGLManufacturer"))
-    fp.webglVendor = v.webGLManufacturer;
-  if (Object.hasOwn(v, "webGLRender")) fp.webglRenderer = v.webGLRender;
+  for (const [field, key] of [['webGLManufacturer', 'webglVendor'], ['webGLRender', 'webglRenderer']]) {
+    const automatic = v.webGLInfo === 1 && (base.privacy?.webglMeta !== 'noise'
+      || (Object.hasOwn(v, field) && v[field] !== fp[key]));
+    if (automatic || (v.webGLInfo !== 2 && isGeneratedHardware(field))) delete fp[key];
+    else if (Object.hasOwn(v, field)) fp[key] = v[field];
+  }
   if (Object.hasOwn(v, "openBluetooth"))
     fp.bluetooth = v.openBluetooth && !v.bluetoothAdapter ? "blocked" : "real";
   if (Object.hasOwn(v, "openNetwork")) {
@@ -259,7 +283,7 @@ function fromRoxy(v, base = {}) {
       .map((name) => name.trim())
       .filter(Boolean);
   else if (Object.hasOwn(v, "fontList")) fp.fonts = v.fontList;
-  if (Object.keys(fp).length) mapped.privacy.fingerprint = fp;
+  if (mapped.privacy.fingerprint || Object.keys(fp).length) mapped.privacy.fingerprint = fp;
   for (const [source, target] of Object.entries({
     blockDomainList: "blockUrls",
     allowDomainList: "allowUrls",
@@ -315,6 +339,7 @@ function fromRoxy(v, base = {}) {
     if (Object.hasOwn(v, source))
       mapped.privacy[target] =
         source === "useGpu" ? (v[source] ? "on" : "off") : v[source];
+  if (isGeneratedHardware('macAddr')) mapped.privacy.mac = '';
   if (Object.hasOwn(v, "fontType"))
     mapped.privacy.fontListMode = v.fontType ? "noise" : "real";
   if (Object.hasOwn(v, "labelIds")) {
@@ -333,6 +358,7 @@ function fromRoxy(v, base = {}) {
   return sanitizeProfile(mapped);
 }
 function toRoxy(p) {
+  const device = resolveFingerprintDeviceSettings(p.privacy);
   let proxy = {};
   if (p.networkMode === "proxy" && p.proxy) {
     try {
@@ -437,7 +463,7 @@ function toRoxy(p) {
         : p.privacy?.uiLanguage || p.language,
     isTimeZone: p.privacy?.timezoneMode === "ip",
     timeZone: p.privacy?.timezone || "UTC",
-    isPositionBaseIp: !!p.privacy?.geoFromIp,
+    isPositionBaseIp: geolocationUsesIp(p.privacy),
     displayLanguage: p.language,
     openWidth: p.width,
     openHeight: p.height,
@@ -455,10 +481,10 @@ function toRoxy(p) {
     webGpu: p.privacy?.webgpu === "blocked" ? "block" : p.privacy?.webgpu,
     doNotTrack: resolveDoNotTrackMode(p.privacy) === 'on',
     deviceInfo: p.privacy?.mediaDevices !== "real",
-    deviceNameSwitch: p.privacy?.deviceNameMode !== "real",
-    deviceName: p.privacy?.deviceName,
-    macInfo: p.privacy?.macMode === "custom",
-    macAddr: p.privacy?.mac,
+    deviceNameSwitch: device.deviceNameMode !== "real",
+    deviceName: device.deviceNameMode === "noise" ? '' : device.deviceName,
+    macInfo: device.macMode === "custom",
+    macAddr: device.mac,
     portScanProtect: p.privacy?.portScanProtect,
     portScanList: p.privacy?.portScanAllow,
     openBattery: p.privacy?.battery !== "real",
@@ -493,9 +519,9 @@ function toRoxy(p) {
     sessionStorages: p.advanced?.sessionStorages,
     blockDomainList: p.advanced?.blockUrls?.split("\n").filter(Boolean) || [],
     allowDomainList: p.advanced?.allowUrls?.split("\n").filter(Boolean) || [],
-    hardwareConcurrent: p.privacy?.cores,
-    deviceMemory: p.privacy?.memory,
-    webRTC: { proxy: 0, real: 1, disabled: 2 }[p.privacy?.webrtc] ?? 2,
+    hardwareConcurrent: device.cores,
+    deviceMemory: device.memory,
+    webRTC: { proxy: 0, real: 1, disabled: 2 }[device.webrtc] ?? 2,
     position: { prompt: 0, allow: 1, deny: 2 }[p.privacy?.geoPermission] ?? 0,
     resolutionType: p.privacy?.resolutionMode !== "real",
     resolutionX: p.privacy?.fingerprint?.screenWidth,

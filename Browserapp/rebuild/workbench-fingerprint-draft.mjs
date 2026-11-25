@@ -4,6 +4,8 @@ const draftState = Symbol('fingerprint-draft');
 const primary = groups => Array.isArray(groups?.[0]) ? groups[0] : groups;
 const selection = value => ({ os: value.os, osVersion: value.osVersion,
   coreType: value.coreType, coreVersion: value.coreVersion, useLatestCore: value.useLatestCore });
+const hardwareFields = ['hardwareConcurrent', 'deviceMemory'];
+const deviceFields = ['deviceName', 'macAddr'];
 
 const previewIncomplete = '指纹预览未返回完整身份，请重试';
 const nonBlank = value => typeof value === 'string' && value.trim() !== '';
@@ -37,7 +39,15 @@ function stateFor(groups, create = false) {
 
 export function serializeFingerprintDraft(groups, value) {
   const identity = stateFor(groups)?.identity;
-  return identity ? { ...value, _fingerprintDraft: identity } : value;
+  if (!identity) return value;
+  if (!identity.generatedHardware) return { ...value, _fingerprintDraft: identity };
+  const generatedHardware = { ...identity.generatedHardware };
+  // A numeric selector can equal the preview by coincidence. Its value is
+  // still an explicit choice when the user saves the form.
+  for (const key of hardwareFields) {
+    if (Object.hasOwn(value, key)) delete generatedHardware[key];
+  }
+  return { ...value, _fingerprintDraft: { ...identity, generatedHardware } };
 }
 
 export function restoreFingerprintDraft(groups, value) {
@@ -51,6 +61,7 @@ export function restoreFingerprintDraft(groups, value) {
     seed: value.fingerprintSeed, version: value.fingerprintVersion,
     userAgent: value.userAgent || '', generated: value.privacy?.fingerprint?.uaGenerated === true,
     uaReduced: value.privacy?.fingerprint?.uaReduced,
+    uaVersionRandomized: value.privacy?.fingerprint?.uaVersionRandomized,
     uaPatchRandomized: value.privacy?.fingerprint?.uaPatchRandomized,
     clientHints: value.privacy?.fingerprint?.clientHints,
   } : null);
@@ -62,8 +73,16 @@ export function invalidateFingerprintDraft(groups) {
   if (state) state.revision++;
 }
 
+export function markFingerprintFieldExplicit(groups, key) {
+  const state = stateFor(groups);
+  if (!Object.hasOwn(state?.identity?.generatedHardware || {}, key)) return;
+  const generatedHardware = { ...state.identity.generatedHardware };
+  delete generatedHardware[key];
+  state.identity = { ...state.identity, generatedHardware };
+}
+
 export async function refreshFingerprintDraft(groups, { read, apply, find, request, count = 1, preview = true,
-  preserve = [], keepSeed = false }) {
+  preserve = [], keepSeed = false, randomizeUaVersion = false }) {
   const state = stateFor(groups, true);
   const field = find(primary(groups), 'userAgent');
   // Clear a failed preview's validation message while retrying.
@@ -86,17 +105,27 @@ export async function refreshFingerprintDraft(groups, { read, apply, find, reque
     /Firefox\//i.test(values.userAgent) !== (selected.coreType === 'Firefox');
   if (preview && field && mismatchedEngine) field.value = '';
   try {
+    const controls = {};
+    const generated = state.identity?.generatedHardware || {};
+    for (const key of [...hardwareFields, 'resolutionType', 'resolutionX', 'resolutionY',
+      'deviceInfo', 'deviceNameSwitch', 'macInfo',
+      'position', 'isPositionBaseIp', 'latitude', 'longitude', 'precisionPos']) {
+      if (Object.hasOwn(values, key)) controls[key] = values[key];
+    }
+    for (const key of deviceFields) {
+      if (Object.hasOwn(values, key)) controls[key] = values[key] === generated[key] ? '' : values[key];
+    }
     const rows = await request({ ...selected, count, fontType: values.fontType,
       profileId: state.profileId,
       ...(retainedIdentity ? { reuseDraft: retainedIdentity } : {}),
+      ...(randomizeUaVersion ? { randomizeUaVersion, previousUserAgent: values.userAgent } : {}),
+      ...controls,
       canvas: values.canvas, webGL: values.webGL, audioContext: values.audioContext,
       webGLInfo: values.webGLInfo,
       ...(preview && values.webGLInfo === 2 ? {
         webGLManufacturer: values.webGLManufacturer, webGLRender: values.webGLRender,
       } : {}),
-      speechVoices: values.speechVoices, clientRects: values.clientRects, macInfo: values.macInfo,
-      macAddr: values.macAddr,
-      previousUserAgent: values.userAgent || '' });
+      speechVoices: values.speechVoices, clientRects: values.clientRects });
     if (!preview) return requireFingerprintPreviewRows(rows, count);
     const active = current();
     if (!active) return [];
@@ -106,11 +135,23 @@ export async function refreshFingerprintDraft(groups, { read, apply, find, reque
     const keepCustomUa = preserve.includes('userAgent') && Boolean(active.userAgent) && !mismatchedEngine;
     if (keepCustomUa) delete visible.userAgent;
     if (active.webGLInfo === 2) { delete visible.webGLManufacturer; delete visible.webGLRender; }
-    if (active.macAddr) delete visible.macAddr;
-    for (const key of ['hardwareConcurrent', 'deviceMemory', 'deviceName']) {
-      if (preserve.includes(key) || active[key] !== values[key]) delete visible[key];
+    delete visible.hardwareConcurrent;
+    delete visible.deviceMemory;
+    const previousGenerated = state.identity?.generatedHardware || {};
+    const generatedHardware = { ...identity.generatedHardware };
+    for (const key of deviceFields) {
+      const auto = Object.hasOwn(previousGenerated, key) && active[key] === previousGenerated[key];
+      if (keepSeed || preserve.includes(key) || active[key] !== values[key] || (nonBlank(active[key]) && !auto))
+        delete visible[key];
+      // A hidden field or a UA-only preview can leave a displayed value untouched.
+      // Its provenance belongs to that displayed value, even if the server sampled another.
+      if (!nonBlank(visible[key])) {
+        delete generatedHardware[key];
+        if (auto || (active[key] === undefined && Object.hasOwn(previousGenerated, key)))
+          generatedHardware[key] = previousGenerated[key];
+      }
     }
-    state.identity = identity;
+    state.identity = { ...identity, generatedHardware };
     apply(groups, visible);
     if (field) {
       field._custom_ua = keepCustomUa;

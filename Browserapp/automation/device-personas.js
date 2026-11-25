@@ -1,6 +1,35 @@
 "use strict";
 
 const crypto = require("crypto");
+const desktopCatalog = require('./data/desktop-personas-v3.json');
+const desktopAdditions = require('./data/desktop-personas-v4.json');
+const { osChromeSupportViolation } = require('./user-agent');
+
+function desktopPersonasByOs(devices) {
+  const byOs = new Map();
+  for (const row of devices) {
+    const { platform, logicalProcessors, ramGiB, panel, dpr, gpu } = row;
+    const vendor = { amd: 'AMD', apple: 'Apple', intel: 'Intel', nvidia: 'NVIDIA' }[gpu.vendor];
+    const backend = platform === 'windows' ? `${gpu.name} Direct3D11 vs_5_0 ps_5_0, D3D11`
+      : platform === 'linux' ? `${gpu.name}, OpenGL 4.6`
+        : `ANGLE Metal Renderer: ${gpu.name}, Unspecified Version`;
+    const pool = byOs.get(platform) || [];
+    pool.push({
+      os: platform, cores: logicalProcessors, memory: ramGiB >= 8 ? 8 : 4,
+      laptop: row.laptop !== false, colorDepth: platform.startsWith('macos') ? 30 : 24,
+      devicePixelRatio: dpr, screen: { width: Math.round(panel[0] / dpr), height: Math.round(panel[1] / dpr) },
+      webgl: {
+        vendor: `Google Inc. (${vendor})`, renderer: `ANGLE (${vendor}, ${backend})`,
+        gpu: { vendor: gpu.vendor, architecture: gpu.architecture },
+      },
+      macOS: row.macOS,
+    });
+    byOs.set(platform, pool);
+  }
+  return byOs;
+}
+const DESKTOP_V3 = desktopPersonasByOs(desktopCatalog.devices);
+const DESKTOP_V4 = desktopPersonasByOs([...desktopCatalog.devices, ...desktopAdditions.devices]);
 
 /**
  * Coherent device personas.
@@ -546,14 +575,32 @@ function resolveCompatiblePersona(persona, hostPlatform = process.platform) {
 }
 
 function pickPersona(os, index, options) {
+  const n = Number.isFinite(Number(index)) ? Math.abs(Math.trunc(Number(index))) : 0;
   let pool;
-  if (options && (options.hostCompatible || options.host || options.hostLimits)) {
+  const curated = options?.fingerprintVersion >= 3
+    && (options.fingerprintVersion >= 4 ? DESKTOP_V4 : DESKTOP_V3).get(os);
+  if (curated) {
+    const macMajor = os.startsWith('macos') ? Number(String(options.osVersion || '').match(/\d+/)?.[0]) : 0;
+    const candidate = curated[n % curated.length];
+    const supportsRelease = persona => persona.macOS.some(version => Number(version.split('.')[0]) === macMajor);
+    // Saving the sampled UA adds a release constraint. Keep the sampled
+    // device whenever it already supports that release.
+    if (!macMajor || supportsRelease(candidate)) return candidate;
+    const compatible = curated.filter(supportsRelease);
+    pool = compatible.length ? compatible : personasForOs(os);
+  } else if (options && (options.hostCompatible || options.host || options.hostLimits)) {
     pool = compatiblePersonasForOs(os, options.hostLimits || options.host || process.platform);
   } else {
     pool = personasForOs(os);
   }
-  const n = Number.isFinite(Number(index)) ? Math.abs(Math.trunc(Number(index))) : 0;
   return pool[n % pool.length];
+}
+
+function desktopPlatformVersion(os, persona, draw, chromeMajor) {
+  if (os === 'linux') return '';
+  const versions = os === 'windows' ? ['15.0.0', '13.0.0']
+    : persona?.macOS?.filter(release => !osChromeSupportViolation({ id: os }, release, chromeMajor, 3));
+  return versions?.[draw % versions.length];
 }
 
 /** True when the axes form a combination that real hardware actually ships. */
@@ -623,6 +670,7 @@ function applyPersonaPerturbations(persona, seedInput) {
 }
 
 module.exports = {
+  desktopPlatformVersion,
   WINDOWS_PERSONAS,
   MACOS_APPLE_PERSONAS,
   PERSONAS_BY_OS,

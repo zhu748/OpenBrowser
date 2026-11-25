@@ -28,6 +28,7 @@ const { OpenerlessPageGate } = require('../automation/openerless-page-gate');
 const { closePageFingerprintConnection } = require('./fingerprint-transport');
 const { FingerprintSession } = require('./fingerprint-session');
 const { applyNetworkConditions, applyNavigationNetworkConditions } = require('./network-conditions');
+const { hostScreenSummary } = require('./launch-display');
 
 // Stable identity of the document-start config. Two inject payloads built from the same
 // fingerprint serialise identically, so this is what decides whether a live tab still matches
@@ -1115,12 +1116,14 @@ module.exports = {
     if (!profile) throw new Error('profile not found');
     const running = this.running?.get(profile.id);
     if (this.profilePrefersFirefox?.(profile)) {
-      const fingerprint = running?.fingerprint || require('../automation/firefox-fingerprint').buildFirefoxFingerprint(profile, this.chooseBrowser(profile, 'firefox').version);
+      const fingerprint = running?.fingerprint || require('../automation/firefox-fingerprint').buildFirefoxFingerprint({
+        ...profile, hostScreen: profile.hostScreen ?? hostScreenSummary(),
+      }, this.chooseBrowser(profile, 'firefox').version);
       return { ...structuredClone(fingerprint), delivery: running?.capabilities?.fingerprintDelivery ? 'verified-document' : 'configured' };
     }
     if (running?.fingerprint) return structuredClone(running.fingerprint);
     const kernelVersion = profile.kernelVersion || this.chooseBrowser(profile, 'chromium').version;
-    return buildFingerprint({ ...profile, kernelVersion });
+    return buildFingerprint({ ...profile, kernelVersion, hostScreen: profile.hostScreen ?? hostScreenSummary() });
   },
 
 fingerprintConfigHash,

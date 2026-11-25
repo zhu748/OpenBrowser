@@ -13,6 +13,7 @@
  * Exit codes: 2 = native prerequisite missing, 1 = assertion failure.
  */
 const assert = require('node:assert/strict');
+const http = require('node:http');
 const {
   Unavailable, delay, chooseChromiumBinary, buildPersona, launchPersonaBrowser,
   openPage, evaluate,
@@ -114,14 +115,30 @@ const PROBE = `(async () => {
   const browser = chooseChromiumBinary();
   const persona = buildPersona('native-render', { os: 'Windows', dpr: 2, width: 1440, height: 900 });
   const fp = persona.fingerprint;
-  const session = await launchPersonaBrowser(browser, persona, { hostDpr: 2 });
+  const server = http.createServer((_request, response) => {
+    response.setHeader('Content-Type', 'text/html');
+    response.end('<!doctype html><title>Render consistency</title>');
+  });
+  let page, session;
   try {
-    const page = await openPage(session.port, 'about:blank');
-    await evaluate(page, `location.href = 'about:blank'; true`).catch(() => {});
-    // Real content needs an origin; reuse a minimal data document via CDP evaluate
-    // on the blank page (document.write gives us DOM APIs).
-    await evaluate(page, `document.open(); document.write('<!doctype html><html><body></body></html>'); document.close(); true`);
-    await delay(200);
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    session = await launchPersonaBrowser(browser, persona, { hostDpr: 2 });
+    const url = 'http://127.0.0.1:' + server.address().port + '/';
+    page = await openPage(session.port, url);
+    const deadline = performance.now() + 8000;
+    let ready = false;
+    while (!ready && performance.now() < deadline) {
+      try {
+        ready = await evaluate(page, `location.href === ${JSON.stringify(url)} && document.readyState === 'complete'`, 1000);
+      } catch (error) {
+        if (!/context|navigated/i.test(error.message)) throw error;
+      }
+      if (!ready) await delay(50);
+    }
+    assert.ok(ready, 'the render probe page must finish navigation');
     const probe = await evaluate(page, PROBE, 30000);
 
     // --- CSS agrees with JS ---
@@ -193,7 +210,9 @@ const PROBE = `(async () => {
 
     console.log('fingerprint-render-consistency-selftest: OK');
   } finally {
-    await session.close().catch(() => {});
+    page?.close();
+    try { await session?.close(); }
+    finally { await new Promise(resolve => server.close(resolve)); }
   }
 })().catch((error) => {
   console.error((error instanceof Unavailable ? 'SKIP ' : 'FAIL ') + error.message);

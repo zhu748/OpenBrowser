@@ -440,13 +440,8 @@
   function autoFillDeviceNameByOs(osName, force = true) {
     const input = document.getElementById('editor-device-name');
     if (!input) return;
-    if (!force && input.value && !/^(DESKTOP-|ubuntu-|Mobile-|MacBook-|iPhone-)/.test(input.value)) return;
-    const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
-    if (/linux/i.test(osName)) input.value = `ubuntu-${rand.slice(0, 5)}`;
-    else if (/android/i.test(osName)) input.value = `Mobile-${rand.slice(0, 5)}`;
-    else if (/ios/i.test(osName)) input.value = `iPhone-${rand.slice(0, 4)}`;
-    else if (/mac/i.test(osName)) input.value = `MacBook-Pro-${rand.slice(0, 4)}`;
-    else input.value = `DESKTOP-${rand}`;
+    if (!force && input.value) return;
+    input.value = window.OpenBrowserProfileValues.formatGeneratedDeviceName(osName, crypto.getRandomValues(new Uint8Array(7)));
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
@@ -549,7 +544,7 @@
     const form = document.getElementById('profile-editor-form');
     if (form) {
       for (const key of ['fingerprintSeed', 'resetFingerprint', 'uaProfile']) delete form.dataset[key];
-      form.dataset.fingerprintVersion = '2';
+      form.dataset.fingerprintVersion = String(window.OpenBrowserProfileValues.CURRENT_FINGERPRINT_VERSION);
     }
     const num = typeof nextProfileNumber === 'function' ? nextProfileNumber() : 1;
     const now = new Date();

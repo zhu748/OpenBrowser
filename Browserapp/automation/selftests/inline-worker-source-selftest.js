@@ -38,14 +38,14 @@ async function main() {
   assert.equal(tools.resolve('/relative-worker.js'), null, 'ordinary URLs keep their native base URL resolution');
   assert.equal(tools.resolve('https://example.test/worker.js'), null);
   const profile = sanitizeProfile({ id: 'native-version-cache', name: 'Native version cache', engine: 'firefox',
-    os: 'Windows', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) Gecko/20100101 Firefox/158.0',
+    os: 'Windows', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:160.0) Gecko/20100101 Firefox/160.0',
     fingerprintSeed: 'native-version-cache', privacy: { fontListMode: 'real' } });
-  const fp159 = buildFirefoxFingerprint(profile, '159.0'), fp160 = buildFirefoxFingerprint(profile, '160.0');
-  assert.equal(fp159.userAgent, fp160.userAgent, 'the pinned UA does not identify the actual native kernel');
+  const first = buildFirefoxFingerprint(profile, '160.0.1'), second = buildFirefoxFingerprint(profile, '160.0.2');
+  assert.equal(first.userAgent, second.userAgent, 'the pinned UA does not identify the native patch version');
   for (const build of [buildInjectionScript, buildWorkerInjectionScript]) {
-    const older = build(fp159), newer = build(fp160);
+    const older = build(first), newer = build(second);
     assert.notEqual(older, newer, 'cached source must follow the actual kernel even with an unchanged UA');
-    assert.ok(older.includes('"kernelVersion":"159.0"') && newer.includes('"kernelVersion":"160.0"'));
+    assert.ok(older.includes('"kernelVersion":"160.0.1"') && newer.includes('"kernelVersion":"160.0.2"'));
   }
   console.log('INLINE_WORKER_SOURCE OK (native fetch decoding, malformed bytes, MIME metadata, base64 and per-engine URL contracts)');
 }

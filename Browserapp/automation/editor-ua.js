@@ -1,10 +1,12 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const { buildUaProfile, parseOsFromUa, parseChromeVersion, normalizeUaOs } = require('./user-agent');
+const { buildUaProfile, withChromeUaVersion, parseOsFromUa, parseChromeVersion, normalizeUaOs, normalizeSelectedOsVersion, desktopUaOsForRelease } = require('./user-agent');
 const { firefoxUserAgent } = require('./kernel-versions');
-const { randomUaPatchVersion } = require('./ua-version');
+const { desktopPlatformVersion, pickPersona } = require('./device-personas');
+const { CURRENT_FINGERPRINT_VERSION, fingerprintVersion } = require('./fingerprint/generation');
 const { OPENBROWSER_KERNEL_VERSION } = require('./versions');
+const { pickPublishedChromeVersion } = require('./ua-version');
 
 function buildEditorUa(engine, payload = {}) {
   const saved = engine.profiles.get(String(payload.profileId || '')) || {};
@@ -13,8 +15,10 @@ function buildEditorUa(engine, payload = {}) {
   let browser;
   try { browser = engine.chooseBrowser(profile, family); }
   catch (error) { if (family === 'firefox' || error.code === 'KERNEL_VERSION_NOT_INSTALLED') throw error; }
+  const savedOs = normalizeUaOs(saved.os);
   const os = normalizeUaOs(payload.os || saved.os) || (payload.userAgent ? parseOsFromUa(payload.userAgent) : 'windows');
-  const osVersion = payload.osVersion ?? (!payload.os || normalizeUaOs(payload.os) === normalizeUaOs(saved.os) ? saved.osVersion : undefined);
+  const samePlatform = os === savedOs || (os === 'macos' && savedOs === 'macos_arm');
+  const osVersion = payload.osVersion ?? (samePlatform ? saved.osVersion : undefined);
   if (family === 'firefox') {
     if (os === 'android' || os === 'ios')
       throw Object.assign(new Error('Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux'), { code: 'UA_PLATFORM_UNSUPPORTED' });
@@ -26,18 +30,41 @@ function buildEditorUa(engine, payload = {}) {
     return { ...buildUaProfile({ os, userAgent: payload.userAgent || firefoxUserAgent(osName, browser.version) }), kernelBound: !payload.userAgent };
   }
   const version = browser?.version || OPENBROWSER_KERNEL_VERSION;
-  const major = Number(payload.chromeMajor) || parseChromeVersion(payload.userAgent)?.major || Number(version.split('.')[0]);
-  const generated = (ua) => ({ ...ua, kernelVersion: version, kernelBound: !payload.userAgent && ua.chromeFull === version });
+  const installedMajor = Number(version.split('.')[0]);
+  const versionForDraft = fingerprintVersion(payload.fingerprintVersion ?? saved.fingerprintVersion
+    ?? (payload.profileId ? 1 : CURRENT_FINGERPRINT_VERSION));
+  const major = payload.random ? installedMajor
+    : (Number(payload.chromeMajor) || parseChromeVersion(payload.userAgent)?.major || installedMajor);
+  const keepDevice = !payload.resetFingerprint && samePlatform
+    && normalizeSelectedOsVersion(saved.osVersion) === normalizeSelectedOsVersion(osVersion)
+    && versionForDraft === fingerprintVersion(saved.fingerprintVersion);
+  const hints = keepDevice ? saved.privacy?.fingerprint?.clientHints : null;
+  const generated = (ua) => {
+    if (payload.random) {
+      const full = pickPublishedChromeVersion(version, ua.os, payload.previousUserAgent);
+      return { ...withChromeUaVersion(ua, full), kernelVersion: version, kernelBound: true,
+        uaReduced: false, uaVersionRandomized: true, uaPatchRandomized: false };
+    }
+    return { ...ua, kernelVersion: version, kernelBound: !payload.userAgent && ua.chromeFull === version };
+  };
   if ((os === 'android' || os === 'ios') && !payload.userAgent) {
     return generated(require('./mobile-personas').mobilePersona(payload.deviceSeed ?? crypto.randomBytes(4).readUInt32BE(0), os, {
-      chromeMajor: major, chromeFull: Number(version.split('.')[0]) === major ? version : undefined,
-      osVersion,
+      chromeMajor: major, chromeFull: installedMajor === major ? version : undefined,
+      osVersion: hints?.platform_version || osVersion,
+      deviceModel: hints?.deviceModel, fingerprintVersion: versionForDraft,
     }).uaProfile);
   }
   if (payload.random) {
-    const fullVersion = randomUaPatchVersion(version, { previousUserAgent: payload.previousUserAgent || payload.userAgent });
-    return { ...buildUaProfile({ os, chromeMajor: Number(version.split('.')[0]), chromeFull: fullVersion, osVersion, reduced: false }),
-      kernelVersion: version, kernelBound: true, uaReduced: false, uaPatchRandomized: true };
+    const seed = crypto.randomBytes(4).readUInt32BE(0);
+    const release = normalizeSelectedOsVersion(osVersion);
+    const desktopOs = desktopUaOsForRelease(
+      os === 'macos' && keepDevice && (hints?.architecture === 'arm' || savedOs === 'macos_arm') ? 'macos_arm' : os,
+      release,
+    );
+    const persona = pickPersona(desktopOs, seed, { fingerprintVersion: versionForDraft, osVersion: release });
+    const sampled = !release || os === 'linux' ? desktopPlatformVersion(desktopOs, persona, seed >>> 16, major) : undefined;
+    return generated(buildUaProfile({ os: desktopOs, chromeMajor: major, chromeFull: version,
+      osVersion: release, platform_version: hints?.platform_version ?? hints?.platformVersion ?? sampled, reduced: true }));
   }
   return generated(buildUaProfile({
     userAgent: payload.userAgent || '', os, chromeMajor: major,

@@ -1578,28 +1578,23 @@ function useSystemEditorDefaults() {
   refreshUaMetaPreview().catch(() => {});
 }
 
-function editorOsToUaKey(osLabel) {
-  const s = String(osLabel || '');
-  if (/android/i.test(s)) return 'android';
-  if (/mac/i.test(s)) return 'macos';
-  if (/linux/i.test(s)) return 'linux';
-  return 'windows';
-}
-
 async function applyBuiltUa(payload) {
   if (!window.ops?.buildUa) throw new Error(tx('UA 生成接口不可用，请重启应用'));
   const request = editorRequests.begin('ua', editorUaRequestInputs);
+  const form = $('#profile-editor-form');
   let ua;
-  try { ua = await window.ops.buildUa(payload); }
+  try { ua = await window.ops.buildUa({ ...payload,
+    fingerprintVersion: form?.dataset.fingerprintVersion, resetFingerprint: Boolean(form?.dataset.resetFingerprint),
+  }); }
   catch (error) { if (request.current()) throw error; return null; }
   if (!request.current()) return null;
-  const form = $('#profile-editor-form');
   if (form) form.dataset.uaProfile = JSON.stringify(ua);
   editorSet('#editor-user-agent', ua.userAgent || '');
   // sync OS selector with generated UA platform
-  if (ua.os === 'macos') editorSet('#editor-os', 'macOS');
+  if (ua.os === 'macos' || ua.os === 'macos_arm') editorSet('#editor-os', 'macOS');
   else if (ua.os === 'linux') editorSet('#editor-os', 'Linux');
   else if (ua.os === 'android') editorSet('#editor-os', 'Android');
+  else if (ua.os === 'ios') editorSet('#editor-os', 'iOS');
   else if (ua.os === 'windows') editorSet('#editor-os', 'Windows');
   if (ua.chromeMajor) editorSet('#editor-ua-chrome-major', String(ua.chromeMajor));
   await showUaMetaPreview(ua);
@@ -1638,7 +1633,7 @@ document.getElementById('editor-ua-generate')?.addEventListener('click', async (
       profileId: editingProfileId,
       engine: $('#editor-engine')?.value,
       engineVersion: $('#editor-engine-version')?.value,
-      os: editorOsToUaKey($('#editor-os')?.value),
+      os: $('#editor-os')?.value,
       osVersion: $('#editor-os-version')?.value,
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
@@ -1652,7 +1647,8 @@ document.getElementById('editor-ua-random')?.addEventListener('click', async () 
       engine: $('#editor-engine')?.value,
       engineVersion: $('#editor-engine-version')?.value,
       random: true,
-      os: editorOsToUaKey($('#editor-os')?.value),
+      previousUserAgent: $('#editor-user-agent')?.value,
+      os: $('#editor-os')?.value,
       osVersion: $('#editor-os-version')?.value,
       chromeMajor: Number($('#editor-ua-chrome-major')?.value) || undefined,
     });
@@ -1720,14 +1716,8 @@ document.getElementById('editor-os')?.addEventListener('change', () => {
   if ($('#editor-webgl-meta')?.value === 'custom') editorWebglShuffle();
 });
 
-// MAC 随机：本地管理位（第 2 个十六进制位取 2/6/A/E）+ 随机 5 字节，冒号分隔。
 document.getElementById('editor-mac-shuffle')?.addEventListener('click', () => {
-  const bytes = new Uint8Array(5);
-  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') crypto.getRandomValues(bytes);
-  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
-  const hex = (v) => v.toString(16).padStart(2, '0').toUpperCase();
-  const second = ['2', '6', 'A', 'E'][cryptoRandomIndex(4)];
-  const mac = [hex(bytes[0])[0] + second, ...[...bytes].slice(1).map(hex)].join(':');
+  const mac = window.OpenBrowserProfileValues.formatLocalMacAddress(crypto.getRandomValues(new Uint8Array(6)));
   editorSet('#editor-mac', mac);
   renderEditorSummary();
 });
@@ -3866,7 +3856,7 @@ $('#profile-form').addEventListener('submit', async (event) => {
   const template = templateId ? ui.profiles.find((item) => item.id === templateId) : null;
   const profile = {
     id: createInternalProfileId(number),
-    fingerprintVersion: Number(template?.fingerprintVersion || (template ? 1 : 2)),
+    fingerprintVersion: Number(template?.fingerprintVersion || (template ? 1 : window.OpenBrowserProfileValues.CURRENT_FINGERPRINT_VERSION)),
     number,
     name: String(number),
     browser: data.get('browser') || template?.browser || 'Google Chrome',
@@ -4274,7 +4264,7 @@ $('#batch-add-form').addEventListener('submit', async (event) => {
     created.push({
       ...(templatePreferences ? structuredClone(templatePreferences) : {}),
       id,
-      fingerprintVersion: Number(templatePreferences?.fingerprintVersion || (templatePreferences ? 1 : 2)),
+      fingerprintVersion: Number(templatePreferences?.fingerprintVersion || (templatePreferences ? 1 : window.OpenBrowserProfileValues.CURRENT_FINGERPRINT_VERSION)),
       number,
       name: String(number),
       title: '',
@@ -5122,7 +5112,7 @@ $('#batch-import-file').addEventListener('change', async (event) => {
     const extension = file.name.toLowerCase().endsWith('.json') ? 'json' : 'csv'; const parsed = parseImportedProfiles(await file.text(), extension);
     const imported = parsed.rows;
     const start = nextProfileNumber(); const used = new Set(ui.profiles.map((item) => item.id));
-    const normalized = imported.map((item, index) => { const number = start + index; const id = createInternalProfileId(number, used); used.add(id); return { id, fingerprintVersion: 2, number, name: String(number), browser: 'Google Chrome', language: String(item.language || 'en-US'), proxy: String(item.proxy || item.ip || 'Direct'), proxyType: String(item.proxyType || item.proxytype || ''), exitIp: String(item.exitIp || item.ip || ''), exitCountryCode: String(item.exitCountryCode || item.countrycode || ''), tag: String(item.tag || item.group || 'Imported'), os: 'Windows', location: String(item.location || 'Local') }; });
+    const normalized = imported.map((item, index) => { const number = start + index; const id = createInternalProfileId(number, used); used.add(id); return { id, fingerprintVersion: window.OpenBrowserProfileValues.CURRENT_FINGERPRINT_VERSION, number, name: String(number), browser: 'Google Chrome', language: String(item.language || 'en-US'), proxy: String(item.proxy || item.ip || 'Direct'), proxyType: String(item.proxyType || item.proxytype || ''), exitIp: String(item.exitIp || item.ip || ''), exitCountryCode: String(item.exitCountryCode || item.countrycode || ''), tag: String(item.tag || item.group || 'Imported'), os: 'Windows', location: String(item.location || 'Local') }; });
     ui.profiles.push(...normalized); ui.nextProfileNumber = start + normalized.length; save(); invalidateViewCache(['profiles', 'groups', 'sync', 'extensions', 'proxies']); engineProfiles = await syncUiProfiles(normalized); renderProfiles(); log('Import', '\u6279\u91cf\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883');
     // 截断必须用户可见（沿用既有 toast 约定），否则用户以为全量导入成功。
     if (parsed.truncated) toast('\u5df2\u5bfc\u5165 ' + normalized.length + ' \u4e2a\u73af\u5883\uff08\u8d85\u51fa\u4e0a\u9650\uff0c\u5df2\u622a\u65ad\u4e3a\u524d ' + normalized.length + ' \u884c\uff09');

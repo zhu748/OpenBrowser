@@ -17,7 +17,9 @@
 
 const pool = require("./data/mobile-devices.json");
 const corrections = require('./data/mobile-device-corrections.json');
-const { buildUaProfile } = require("./user-agent");
+const curated = require('./data/mobile-personas-v3.json');
+const additions = require('./data/mobile-personas-v4.json');
+const { buildUaProfile, normalizeSelectedOsVersion } = require("./user-agent");
 
 const correctedDevices = new Map(corrections.devices.map((device) => [`${device.os}:${device.model}`, device]));
 // The imported catalogue contains a repeated fallback geometry for unrelated phones.
@@ -30,6 +32,10 @@ const runtimeDevices = catalogDevices.filter((device) => !(device.os === 'androi
 const devicesByOs = new Map(['android', 'ios'].map((os) => [os, runtimeDevices.filter((device) => device.os === os)]));
 const androidCatalog = catalogDevices.filter((device) => device.os === 'android');
 const eligibleDevices = new Set(runtimeDevices);
+const curatedByOs = new Map(['android', 'ios'].map(os => [os, curated.devices.filter(device => device.os === os)]));
+const expandedByOs = new Map(['android', 'ios'].map(os => [
+  os, [...curatedByOs.get(os), ...additions.devices.filter(device => device.os === os)],
+]));
 
 /** Operating systems whose personas the injector can currently back with a consistent surface. */
 const RUNTIME_OS = Object.freeze(["android", "ios"]);
@@ -45,9 +51,9 @@ const { MOBILE_DEFAULT_CHROME_MAJOR: DEFAULT_CHROME_MAJOR } = require('./version
 
 const normalizeOs = (os) => (String(os || "").toLowerCase() === "ios" ? "ios" : "android");
 
-function devicesForOs(os) {
+function devicesForOs(os, fingerprintVersion) {
   const key = normalizeOs(os);
-  return devicesByOs.get(key).slice();
+  return (fingerprintVersion >= 4 ? expandedByOs : fingerprintVersion >= 3 ? curatedByOs : devicesByOs).get(key).slice();
 }
 
 function supportsRuntimePersona(os) {
@@ -186,35 +192,52 @@ function mobilePersona(seedU32, os = "android", options = {}) {
   const seed = Number.isFinite(Number(seedU32)) ? Math.abs(Math.trunc(Number(seedU32))) : 1;
   const isIos = key === "ios";
   const chromeMajor = Number(options.chromeMajor) || DEFAULT_CHROME_MAJOR;
-  let devices = devicesByOs.get(key);
-  if (!devices.length) throw new Error(`mobile device pool has no ${key} entries`);
   const requestedModel = String(options.deviceModel || options.model || '').trim();
-  if (requestedModel && requestedModel !== 'K' && requestedModel !== 'iPhone') {
-    devices = devices.filter((device) => [device.model, device.name].includes(requestedModel));
+  const pinnedModel = requestedModel && requestedModel !== 'K' && requestedModel !== 'iPhone';
+  const curatedIdentity = options.fingerprintVersion >= 3;
+  let devices = devicesForOs(key, options.fingerprintVersion);
+  if (pinnedModel) {
+    const matches = device => [device.model, device.name].includes(requestedModel);
+    devices = devices.filter(matches);
+    // Manual selections of historical hardware retain their previous catalogue.
+    if (!devices.length && curatedIdentity) devices = devicesByOs.get(key).filter(matches);
     if (!devices.length) throw new Error(`移动设备型号没有可用的指纹记录：${requestedModel}；请重新生成 UA 或随机指纹`);
   }
-  const requestedVersion = Number(String(options.osVersion || '').split('.')[0]);
+  const osVersionInput = curatedIdentity ? normalizeSelectedOsVersion(options.osVersion) : String(options.osVersion || '');
+  const requestedVersion = Number(osVersionInput.split('.')[0]);
   if (requestedVersion > 0) {
-    devices = devices.filter((device) => {
+    const supportsVersion = (device) => {
+      if (device.osVersions) return device.osVersions.includes(requestedVersion);
       const versions = String(device.osRange).split(/[^0-9]+/).filter(Boolean).map(Number);
       return versions.length && requestedVersion >= Math.min(...versions) && requestedVersion <= Math.max(...versions);
-    });
+    };
+    devices = devices.filter(supportsVersion);
+    if (!devices.length && curatedIdentity && !pinnedModel && !isIos && requestedVersion < 12) {
+      devices = devicesByOs.get(key).filter(supportsVersion);
+    }
     if (!devices.length) throw new Error(`移动设备型号与系统版本 ${requestedVersion} 不兼容；请重新生成 UA 或随机指纹`);
   }
   if (isIos) {
     // Devices whose support window cannot reach the Chrome floor are excluded from the draw.
     const floor = minIosForChrome(chromeMajor);
-    const capable = devices.filter((device) => androidVersionFromRange(device.osRange, { seed }) >= floor);
-    if (!capable.length) throw new Error(`No iOS persona supports Chrome ${chromeMajor}`);
+    const capable = devices.filter((device) => device.osVersions
+      ? device.osVersions.some(version => version >= floor)
+      : androidVersionFromRange(device.osRange, { seed }) >= floor);
+    if (!capable.length || (curatedIdentity && requestedVersion > 0 && requestedVersion < floor)) {
+      throw new Error(`No iOS persona supports Chrome ${chromeMajor} with the selected iOS release`);
+    }
     devices = capable;
   }
   // Removing bad records must not shift every existing valid seed to a different
   // phone. Preserve its old catalogue slot when it remains eligible; only a
   // quarantined or explicitly constrained identity needs a new selection.
-  const legacyDevice = key === 'android' ? androidCatalog[seed % androidCatalog.length] : null;
+  const legacyDevice = key === 'android' && !curatedIdentity ? androidCatalog[seed % androidCatalog.length] : null;
   const device = !requestedModel && !requestedVersion && legacyDevice && eligibleDevices.has(legacyDevice)
     ? legacyDevice : devices[seed % devices.length];
-  const osVersion = requestedVersion > 0 ? requestedVersion : androidVersionFromRange(device.osRange, { seed: seed >>> 16, fallback: isIos ? 18 : 13 });
+  const knownReleases = device.osVersions?.filter(version => !isIos || version >= minIosForChrome(chromeMajor));
+  const osVersion = requestedVersion > 0 ? requestedVersion : knownReleases
+    ? knownReleases[(seed >>> 16) % knownReleases.length]
+    : androidVersionFromRange(device.osRange, { seed: seed >>> 16, fallback: isIos ? 18 : 13 });
   const resolvedPanel = isIos ? null : resolveAndroidPanel(device.width);
   const dpr = Number(device.dpr) || (isIos ? deriveIosDpr(device.width, device.name) : resolvedPanel.dpr);
   // The pool records the display in CSS pixels, so the layout viewport is that panel minus the
@@ -225,7 +248,7 @@ function mobilePersona(seedU32, os = "android", options = {}) {
   // Memory follows device hardware capabilities quantized to Chrome spec
   const deviceMemory = isIos
     ? (device.cores <= 2 ? 2 : (device.cores <= 4 ? 4 : 8))
-    : (device.cores <= 4 ? 4 : 8);
+    : (device.ramGiB ? (device.ramGiB >= 8 ? 8 : 4) : (device.cores <= 4 ? 4 : 8));
   const model = isIos ? "iPhone" : sanitizeModelToken(device.model, sanitizeModelToken(device.name, "Android"));
   const deviceModel = sanitizeModelToken(device.model, sanitizeModelToken(device.name, isIos ? "iPhone" : "Android"));
   const userAgent = isIos
@@ -257,9 +280,9 @@ function mobilePersona(seedU32, os = "android", options = {}) {
   // Persist the actual device selector, including iOS where the public model is only iPhone.
   uaProfile.clientHints.deviceModel = device.model || device.name;
 
-  const panelWidth = Number(device.panel) || (isIos ? Math.round(screenWidth * dpr) : resolvedPanel.panel);
-  const panelHeight = Math.round(screenHeight * dpr);
-  const panelError = isIos ? 0 : Number(resolvedPanel.error.toFixed(2));
+  const panelWidth = device.panel?.[0] || Number(device.panel) || (isIos ? Math.round(screenWidth * dpr) : resolvedPanel.panel);
+  const panelHeight = device.panel?.[1] || Math.round(screenHeight * dpr);
+  const panelError = isIos ? 0 : Number((device.osVersions ? Math.abs(screenWidth * dpr - panelWidth) : resolvedPanel.error).toFixed(2));
 
   return {
     os: key,
@@ -268,7 +291,7 @@ function mobilePersona(seedU32, os = "android", options = {}) {
     model,
     deviceModel,
     osVersion,
-    osRange: device.osRange,
+    osRange: device.osVersions?.join(',') || device.osRange,
     cores: device.cores,
     deviceMemory,
     colorDepth: 24,

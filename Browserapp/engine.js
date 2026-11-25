@@ -897,7 +897,6 @@ class BrowserEngine {
         try { resources.markerProcess.kill(); } catch (_) {}
       }
       await resources.proxyForwarder?.close().catch(() => {});
-      await resources.workerMitmProxy?.close().catch(() => {});
       await resources.firefoxImageFilter?.close();
       if (ownsSharedResources()) await stopIpcStubForWindow(resources.kernelWindowName).catch(() => {});
       if (child && !exited) {
@@ -1051,7 +1050,6 @@ class BrowserEngine {
       child: resources.child || null,
       cdpConnection: resources.connection || null,
       proxyForwarder: resources.proxyForwarder || null,
-      workerMitmProxy: resources.workerMitmProxy || null,
       firefoxImageFilter: resources.firefoxImageFilter || null,
       markerProcess: resources.markerProcess || null,
       profileLock: resources.profileLock || null,
@@ -1258,6 +1256,7 @@ class BrowserEngine {
       cdpError: item.cdpError || null,
       verificationBlocked: Boolean(item.verificationBlocked),
       fingerprintVerificationError: item.fingerprintVerificationError || null,
+      ...(item.fingerprintWarnings?.length ? { fingerprintWarnings: [...item.fingerprintWarnings] } : {}),
       ...(capabilities ? { capabilities } : {}),
       fingerprint: item.fingerprint ? {
         platform: item.fingerprint.platform,

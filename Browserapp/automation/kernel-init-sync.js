@@ -12,10 +12,15 @@ const path = require('path');
 const crypto = require('crypto');
 
 const { fontsForOs } = require('./device-personas');
-const { normalizeStabilitySettings } = require('../shared/profile-values');
+const { normalizeDeviceMemory, normalizeHardwareConcurrency, normalizeStabilitySettings } = require('../shared/profile-values');
 const { resolveFingerprintGeolocation, formatGeopositionValue } = require('./fingerprint/geolocation-policy');
 
 const { SOURCE_OPENBROWSER } = require('./versions');
+
+const OPTIONAL_FINGERPRINT_FIELDS = [
+  'hardwareConcurrency', 'deviceMemory', 'machine', 'mac_address',
+  'webgl_vendor', 'webgl_renderer', 'webgpu_parameter',
+];
 
 function isOpenBrowser148(browser = {}) {
   if (!browser) return false;
@@ -380,24 +385,22 @@ function mapFingerprintToInitFields(fp = {}, profile = {}) {
     webrtc_media_labels: mediaLabelsFromFp(fp, profile, isEnumerateDevicesEnable),
     battery: batteryFromFp(fp),
     user_agent_data: {
-      architecture: String(meta.architecture || 'x86'),
-      bitness: String(meta.bitness || '64'),
+      architecture: String(meta.architecture ?? 'x86'),
+      bitness: String(meta.bitness ?? '64'),
       mobile: Boolean(meta.mobile),
       model: String(meta.model || ''),
       platform: String(meta.platform || 'Windows'),
-      platformVersion: String(meta.platformVersion || '15.0.0'),
+      platformVersion: String(meta.platformVersion ?? '15.0.0'),
       wow64: Boolean(meta.wow64),
       uaFullVersion: String(meta.uaFullVersion || meta.fullVersion || '148.0.0.0'),
       brands: brandsForInit(fp),
     },
   };
 
-  if (fp.hardwareConcurrency != null && Number(fp.hardwareConcurrency) > 0) {
-    fields.hardwareConcurrency = Math.min(64, Math.max(1, Math.round(Number(fp.hardwareConcurrency))));
-  }
-  if (fp.deviceMemory != null && Number(fp.deviceMemory) > 0) {
-    fields.deviceMemory = Math.min(8, Math.max(1, Math.round(Number(fp.deviceMemory))));
-  }
+  const cores = normalizeHardwareConcurrency(fp.hardwareConcurrency);
+  const memory = normalizeDeviceMemory(fp.deviceMemory);
+  if (cores !== null) fields.hardwareConcurrency = cores;
+  if (memory !== null) fields.deviceMemory = memory;
 
   if (webglMode === 'blocked') {
     fields.webgl_vendor = '';
@@ -618,6 +621,10 @@ function canvasSkipHostsFromFp(fp) {
  * Apply mapped fingerprint fields onto an init object (mutates).
  */
 function applyFingerprintFields(init, fields) {
+  // A missing override restores the current native value even when reusing an init file.
+  for (const key of OPTIONAL_FINGERPRINT_FIELDS) {
+    if (!Object.hasOwn(fields, key)) delete init[key];
+  }
   const skip = new Set([
     '_canvasConsistencyPatch',
     '_webglConsistencyPatch',
@@ -815,7 +822,7 @@ function isDeepEqual(a, b) {
 
 /**
  * 严格回读比对全部泄漏关键字段：
- * platform, user_agent_data, webgl_vendor, webgl_renderer, webgpu_parameter,
+ * platform, user_agent_data, hardware identity, WebGL/WebGPU,
  * accept_languages, cmd_line(user-agent, lange), is_font_finger_printing_enable,
  * font_list, canvas_fingerprint_skip_hosts, webgl_fingerprint_skip_hosts,
  * is_webrtc_enable, webrtc_policy, webrtc_fake_ip, webrtc_local_ip, webrtc_media_labels
@@ -829,9 +836,7 @@ function verifyKernelInitReadback(written, readback, initPath) {
   const fields = [
     'platform',
     'user_agent_data',
-    'webgl_vendor',
-    'webgl_renderer',
-    'webgpu_parameter',
+    ...OPTIONAL_FINGERPRINT_FIELDS,
     'accept_languages',
     'is_font_finger_printing_enable',
     'font_list',

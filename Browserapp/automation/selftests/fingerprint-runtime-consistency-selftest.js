@@ -188,6 +188,59 @@ function networkRealm(fp, worker, expose = true) {
     }, null, buildFingerprint(p), p), /metrics unavailable/);
     assert.equal(registered, false);
   });
+  await test('retry restores native settings after a failed switch without adding a second script', async () => {
+    const original = profile('retry-switch');
+    const alternate = { ...original, os: 'Linux' };
+    const initial = buildFingerprint(original);
+    const changed = buildFingerprint(alternate);
+    const commands = [];
+    let failMetrics = false;
+    let deliveredUa;
+    const invoke = async (method, params) => {
+      commands.push(method);
+      if (method === 'Network.setUserAgentOverride') deliveredUa = params.userAgent;
+      if (failMetrics && method === 'Emulation.setDeviceMetricsOverride') throw Error('metrics failure');
+      return method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'original-script' } : {};
+    };
+    const options = { applyKey: 'retry-switch' };
+    await applyFingerprintToTab(invoke, null, initial, original, options);
+    failMetrics = true;
+    await assert.rejects(applyFingerprintToTab(invoke, null, changed, alternate, options), /metrics failure/);
+    assert.equal(deliveredUa, changed.userAgent, 'the failed switch partially changed native settings');
+    failMetrics = false;
+    commands.length = 0;
+    assert.deepEqual(await applyFingerprintToTab(invoke, null, initial, original, options), { documentStartOk: true, evaluated: true });
+    assert.equal(deliveredUa, initial.userAgent);
+    assert.ok(commands.includes('Emulation.setDeviceMetricsOverride'));
+    assert.ok(!commands.some(method => /Page\.(add|remove)Script|Runtime\.evaluate/.test(method)));
+    commands.length = 0;
+    await applyFingerprintToTab(invoke, null, initial, original, options);
+    assert.deepEqual(commands, [], 'a recovered target can reuse its verified state');
+  });
+  await test('retry clears an override whose acknowledgement was lost', async () => {
+    const original = profile('retry-location', { geoMode: 'prompt', geoPermission: 'prompt' });
+    const changed = { ...original, privacy: { ...original.privacy, geoMode: 'custom', geoPermission: 'allow', latitude: 45, longitude: 12 } };
+    const fp = buildFingerprint(original);
+    for (const failure of ['Emulation.setGeolocationOverride', 'Browser.setPermission']) {
+      const calls = [];
+      let failOnce = true;
+      const invoke = async (method, params) => {
+        calls.push([method, params.setting]);
+        if (failOnce && method === failure) {
+          failOnce = false;
+          throw Error('Lost native acknowledgement');
+        }
+        return method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'location-script' } : {};
+      };
+      const options = { applyKey: 'location-retry-' + failure };
+      await applyFingerprintToTab(invoke, null, fp, original, options);
+      await assert.rejects(applyFingerprintToTab(invoke, null, fp, changed, options), /Lost native acknowledgement/);
+      calls.length = 0;
+      await applyFingerprintToTab(invoke, null, fp, original, options);
+      assert.ok(calls.some(([method]) => method === 'Emulation.clearGeolocationOverride'));
+      if (failure === 'Browser.setPermission') assert.ok(calls.some(([method, setting]) => method === failure && setting === 'prompt'));
+    }
+  });
   await test('profile-only overrides update independently of JS registration and restore native defaults', async () => {
     const p = profile('native-override-key', { geoMode: 'custom', latitude: 12, longitude: 34,
       geoPermission: 'allow', timezoneMode: 'custom', timezone: 'America/New_York' });

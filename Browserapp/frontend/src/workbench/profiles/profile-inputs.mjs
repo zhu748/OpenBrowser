@@ -2,6 +2,7 @@ import {
   restoreFingerprintDraft,
   refreshFingerprintDraft,
   invalidateFingerprintDraft,
+  markFingerprintFieldExplicit,
 } from './workbench-fingerprint-draft.js';
 import {
   En as isOsBlockedForKernel,
@@ -45,7 +46,9 @@ const latestKernel = '__useLatestCore__';
 const previewFieldNames = [
   'os', 'osVersion', 'coreType', 'coreVersion', 'userAgent', 'fontType',
   'canvas', 'webGL', 'webGLInfo', 'webGLManufacturer', 'webGLRender', 'audioContext', 'speechVoices', 'clientRects',
-  'macInfo', 'macAddr', 'hardwareConcurrent', 'deviceMemory', 'deviceName',
+  'macInfo', 'macAddr', 'hardwareConcurrent', 'deviceMemory', 'deviceInfo', 'deviceNameSwitch', 'deviceName',
+  'position', 'isPositionBaseIp', 'latitude', 'longitude', 'precisionPos',
+  'resolutionType', 'resolution',
 ];
 
 function readPreviewInputs(fields) {
@@ -70,16 +73,10 @@ async function refreshUserAgent(fields, { uaOnly = false } = {}) {
     apply: uaOnly ? (groups, { userAgent }) => applyFields(groups, { userAgent }) : applyFields,
     find: findField,
     keepSeed: uaOnly,
+    randomizeUaVersion: uaOnly,
     request: requestFingerprintPreview,
   });
   return results.length > 0;
-}
-
-async function refreshDeviceName(fields) {
-  const { os } = readPreviewInputs(fields);
-  const { code, data } = await api.window.userGetDeviceNameV2List({ os, count: 1 });
-  if (code === 0 && os === readPreviewInputs(fields).os)
-    applyFields(fields, { deviceName: data[0]?.deviceName });
 }
 
 async function fetchBrowserVersions(query) {
@@ -132,7 +129,8 @@ function selectSavedResolution(options, width, height, fallback) {
 }
 
 function hardwareOptions(options, savedValue) {
-  const values = options.map(option => option.value === '0' ? { ...option, label: $t('跟随系统') } : option);
+  const values = [{ label: $t('自动'), value: '' },
+    ...options.map(option => option.value === '0' ? { ...option, label: $t('跟随系统') } : option)];
   const value = String(savedValue ?? '');
   // Preserve 6 GB when editing older profiles that already use this value.
   if (value === '6' && !values.some(option => option.value === value)) values.push({ label: value, value });
@@ -257,7 +255,7 @@ async function initializeProfileInputs(profile = {}, notify = () => {}, gate) {
     osOptions = settings.os.map(({ label: e2, ...t2 }) => {
       let n2 = settings[`osversion_${e2.toLocaleLowerCase()}`].map((n3) => ({
         ...n3,
-        label: `${e2} ${n3.label}`,
+        label: n3.value === 'all' ? $t('自动') : `${e2} ${n3.label}`,
         _osValue: t2.value,
       }));
       return (
@@ -346,6 +344,7 @@ async function initializeProfileInputs(profile = {}, notify = () => {}, gate) {
     ),
     coreOptions = hardwareOptions(settings.hardwareConcurrent),
     memoryOptions = hardwareOptions(settings.deviceMemory, profile.deviceMemory),
+    showCustomLocation = profile.position !== 2 && profile.isPositionBaseIp === false,
     isMobileOs = showMobileProfileFields(selectedOs?.value, selectedEngine),
     fieldGroups = [],
     firefox = isFirefox(selectedEngine),
@@ -402,13 +401,9 @@ async function initializeProfileInputs(profile = {}, notify = () => {}, gate) {
                     options: o2,
                     defaultValue: s2,
                   } = getResolutionOptions(e2.value.value, settings),
-                  [c2, u2] = findFields(fingerprintFields, [
-                    'resolution',
-                    'deviceName',
-                  ]);
-                (c2._isMobile !== a3 &&
-                  ((c2._isMobile = a3), (c2.value = s2), (c2.options = o2)),
-                  u2?.iconClick());
+                  c2 = findField(fingerprintFields, 'resolution');
+                if (c2._isMobile !== a3)
+                  ((c2._isMobile = a3), (c2.value = s2), (c2.options = o2));
                 updateMobileFields(fingerprintFields, showMobileProfileFields(e2.value.value, r2));
               }
             },
@@ -578,6 +573,7 @@ async function initializeProfileInputs(profile = {}, notify = () => {}, gate) {
         slot: 'userAgent',
         preview: { label: 'User Agent' },
         randomHelp: 'Firefox 使用内核标准 UA；一键随机指纹可更新其他参数',
+        refreshHelp: '按所选系统从同一主版本的 Chrome 官方构建中随机 UA',
       },
       {
         type: 'textarea',
@@ -770,7 +766,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
         name: 'longitude',
         value: profile.longitude,
         required: true,
-        visible: equalsOrDefault(profile.isPositionBaseIp, false, false),
+        visible: showCustomLocation,
         onBlur(e2) {
           let t2 = e2.target.value;
           (numberSchema().safeParse(Number(t2)).success && t2 !== ''
@@ -787,7 +783,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
         name: 'latitude',
         value: profile.latitude,
         required: true,
-        visible: equalsOrDefault(profile.isPositionBaseIp, false, false),
+        visible: showCustomLocation,
         onBlur(e2) {
           let t2 = e2.target.value;
           (numberSchema().safeParse(Number(t2)).success && t2 !== ''
@@ -803,7 +799,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
         placeholder: $t('请填写精度（米），范围: 10-5000'),
         name: 'precisionPos',
         value: profile.precisionPos || '1000',
-        visible: equalsOrDefault(profile.isPositionBaseIp, false, false),
+        visible: showCustomLocation,
         onBlur(e2) {
           let t2 = e2.target.value;
           (numberSchema().safeParse(Number(t2)).success && t2 !== ''
@@ -943,7 +939,8 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       _isMobile: isMobile,
       required: true,
       formatValue: (field, _fields, values) => {
-        const [width, height] = field.value.value.split(' x ');
+        const [width, height] = field.value?.value?.split(' x ') || [];
+        if (!width || !height) return;
         Object.assign(values, { resolutionX: width, resolutionY: height });
       },
       visible: equalsOrDefault(profile.resolutionType, true, false),
@@ -1194,12 +1191,12 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       label: ' ',
       name: 'deviceName',
       value: profile.deviceName,
+      placeholder: $t('自动生成'),
       icon: 'base/rx_ic_shuffle',
       visible:
         !firefox && equalsOrDefault(profile.deviceNameSwitch, true, true),
-      iconClick: () => {
-        refreshDeviceName(fieldGroups);
-      },
+      change: () => markFingerprintFieldExplicit(fieldGroups, 'deviceName'),
+      iconClick: refreshDeviceName,
     },
     {
       type: 'selectButton',
@@ -1214,7 +1211,6 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       change(field) {
         const address = findField(fingerprintFields, 'macAddr');
         address.visible = field.value === true;
-        if (address.visible && !address.value) refreshMacAddress(address);
       },
       preview: { label: $t('MAC地址') },
     },
@@ -1224,20 +1220,21 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       name: 'macAddr',
       value: profile.macAddr,
       icon: 'base/rx_ic_shuffle',
-      placeholder: '02:00:00:00:00:01',
+      placeholder: $t('自动生成'),
       errorMsg: $t('请输入有效的 MAC 地址，例如 {address}', { address: '02:00:00:00:00:01' }),
       validator(field) {
         const address = String(field.value ?? '').trim().replace(/-/g, ':');
         return !address || /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/i.test(address);
       },
       visible: !firefox && equalsOrDefault(profile.macInfo, true, true),
+      change: () => markFingerprintFieldExplicit(fieldGroups, 'macAddr'),
       iconClick: refreshMacAddress,
     },
     {
       type: 'select',
       label: $t('硬件并发数'),
       name: 'hardwareConcurrent',
-      value: coreOptions.find(option => option.value === String(profile.hardwareConcurrent ?? 12)),
+      value: coreOptions.find(option => option.value === String(profile.hardwareConcurrent ?? '')),
       options: coreOptions,
       filter: false,
       preview: { label: $t('硬件并发数') },
@@ -1246,7 +1243,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       type: 'select',
       label: $t('设备内存'),
       name: 'deviceMemory',
-      value: memoryOptions.find(option => option.value === String(profile.deviceMemory ?? 8)),
+      value: memoryOptions.find(option => option.value === String(profile.deviceMemory ?? '')),
       options: memoryOptions,
       filter: false,
       preview: { label: $t('设备内存') },
@@ -1744,6 +1741,24 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
     kernel.help = mobile || firefox ? desktopOnly : '';
   }
 
+  let deviceNameRequest = 0;
+  async function refreshDeviceName(field) {
+    const request = ++deviceNameRequest;
+    const previous = field.value;
+    const { os } = readPreviewInputs(fieldGroups);
+    try {
+      const { code, data, msg } = await run(() => api.window.userGetDeviceNameV2List({ os, count: 1 }));
+      if (code !== 0) throw Error(msg);
+      if (request === deviceNameRequest && field.visible && field.value === previous
+        && os === readPreviewInputs(fieldGroups).os && data[0]?.deviceName) {
+        markFingerprintFieldExplicit(fieldGroups, 'deviceName');
+        field.value = data[0].deviceName;
+      }
+    } catch (error) {
+      notify(-1, error.message);
+    }
+  }
+
   let macRequest = 0;
   async function refreshMacAddress(field) {
     const request = ++macRequest;
@@ -1752,6 +1767,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       const { code, data, msg } = await run(() => api.window.userGetMacAddrV2List({ count: 1 }));
       if (code !== 0) throw Error(msg);
       if (request === macRequest && field.visible && field.value === previous && data[0]?.macAddr) {
+        markFingerprintFieldExplicit(fieldGroups, 'macAddr');
         field.value = data[0].macAddr;
         field.invalid = false;
       }

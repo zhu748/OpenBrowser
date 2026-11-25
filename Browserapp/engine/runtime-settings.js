@@ -195,6 +195,11 @@ module.exports = {
           error.mismatches = verified.mismatches;
           throw error;
         }
+        if (options.trackOn && verified.warnings.length) {
+          options.trackOn.fingerprintWarnings = [...new Set([
+            ...(options.trackOn.fingerprintWarnings || []), ...verified.warnings,
+          ])];
+        }
         await fpLog('inject.tab-ok', {
           phase, profileId: profile.id, tabId: tab.id,
           url: sanitizeUrlForLog(tab.url).slice(0, 240), intended: summarizeFp(fp), live,

@@ -353,11 +353,10 @@ async function main() {
   check('webgl meta select has custom option', () => {
     assert.ok(html.includes('<option value="custom">自定义</option>'));
   });
-  check('cpu select offers 20/24 cores', () => {
-    // Labels use the RoxyBrowser parity style ("20核", no space) since the
-    // editor restyle; the assertion tracks the capability, not the label copy.
-    assert.ok(html.includes('<option value="20">20核</option>'));
-    assert.ok(html.includes('<option value="24">24核</option>'));
+  check('cpu select defines automatic and native modes', () => {
+    const cpuSelect = html.match(/<select id="editor-cores">(.*?)<\/select>/s)?.[1];
+    assert.ok(cpuSelect?.includes('<option value="">'));
+    assert.ok(cpuSelect?.includes('<option value="0">'));
   });
 
   const startSrc = fs.readFileSync(START_JS, 'utf8');

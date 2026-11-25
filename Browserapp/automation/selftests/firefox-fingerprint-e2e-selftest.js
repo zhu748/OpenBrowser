@@ -35,14 +35,28 @@ async function run(generation, shortVersion = false) {
   const server = http.createServer((request, response) => {
     requests.push({ path: request.url, ua: request.headers['user-agent'], languages: request.headers['accept-language'], dnt: request.headers.dnt });
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
-    response.end(`<!doctype html><script>window.firstFingerprint=${probe};</script>${request.url === '/doc' ? '<iframe src="/frame"></iframe>' : ''}`);
+    response.end(`<!doctype html><script>
+      window.firstFingerprint = ${probe};
+      const rules = [
+        ['device-width', screen.width + 'px'],
+        ['device-height', screen.height + 'px'],
+        ['resolution', devicePixelRatio + 'dppx'],
+      ];
+      const style = document.createElement('style');
+      style.textContent = rules.map(([feature, value]) =>
+        '@media (' + feature + ': ' + value + ') { :root { --test-' + feature + ': yes } }'
+      ).join('');
+      document.head.append(style);
+      const css = getComputedStyle(document.documentElement);
+      window.firstFingerprint.css = rules.map(([feature]) => css.getPropertyValue('--test-' + feature).trim());
+    </script>${request.url === '/doc' ? '<iframe src="/frame"></iframe>' : ''}`);
   });
   let child;
   let connection;
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const dntMode = generation === 1 ? 'on' : shortVersion === true ? 'off' : 'default';
-    const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York', dntMode }, advanced: { showInfoPage: false } });
+    const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York', dntMode, fingerprint: { screenWidth: 1280, screenHeight: 720, devicePixelRatio: 1.5 } }, advanced: { showInfoPage: false } });
     // Exercise the default proxy policy without an address, and a nested
     // real override that must restore the native preference.
     if (generation === 1) {
@@ -76,11 +90,16 @@ async function run(generation, shortVersion = false) {
     child.stderr.on('data', (chunk) => { child._startupDiagnostic.stderr = (child._startupDiagnostic.stderr + chunk).slice(-32768); });
     connection = await new BidiConnection(await waitForFirefoxEndpoint(child)).open();
     const initialized = await initializeFirefoxFingerprint(connection, fp, profile);
-    await navigateFirefoxStartup(connection, initialized.context, [`http://127.0.0.1:${server.address().port}/doc`]);
+    const origin = `http://127.0.0.1:${server.address().port}`;
+    await navigateFirefoxStartup(connection, initialized.context, [origin + '/doc', origin + '/second']);
     const nativeDnt = await evaluateBidi(connection, { context: initialized.context, sandbox: 'native-dnt-reference' }, 'navigator.doNotTrack ?? null');
     assert.equal(nativeDnt === '1', dntMode === 'on');
     const delivered = await evaluateBidi(connection, { context: initialized.context }, `new Promise((resolve,reject)=>{const deadline=Date.now()+5000;const poll=()=>{const frame=document.querySelector('iframe');if(frame?.contentWindow?.firstFingerprint)resolve({main:window.firstFingerprint,frame:frame.contentWindow.firstFingerprint});else if(Date.now()>deadline)reject(new Error('iframe did not load'));else setTimeout(poll,25)};poll()})`);
-    for (const realm of [delivered.main, delivered.frame]) {
+    const contexts = (await connection.command('browsingContext.getTree', {})).contexts;
+    const second = contexts.find(context => context.url === origin + '/second');
+    assert.ok(second, 'second startup tab exists');
+    const secondFirstRead = await evaluateBidi(connection, { context: second.context }, 'window.firstFingerprint');
+    for (const realm of [delivered.main, delivered.frame, secondFirstRead]) {
       assert.equal(realm.ua, fp.userAgent);
       assert.equal(realm.platform, fp.platform);
       assert.equal(realm.vendor, '');
@@ -94,6 +113,9 @@ async function run(generation, shortVersion = false) {
       assert.equal(realm.timezone, fp.timezone);
       assert.equal(realm.width, fp.screen.width);
       assert.equal(realm.height, fp.screen.height);
+      if (!initialized.warnings.some(warning => warning.includes('不支持原生屏幕覆盖'))) {
+        assert.deepEqual(realm.css, ['yes', 'yes', 'yes'], 'native CSS device dimensions and resolution must agree at document start');
+      }
       assert.equal(realm.dnt, nativeDnt, 'first script reads the native DNT setting');
     }
     const receivers = await evaluateBidi(connection, { context: initialized.context }, '(' + receiverShadowSnapshot.toString() + ')()');

@@ -89,20 +89,21 @@ function workerResponseListener(webRequest, urls, source, syntax, insertAt, isJa
   }, requestFilter, ['blocking', 'responseHeaders']);
 }
 
-async function installFirefoxLocalWorkerFilter(connection, root, workerSource) {
+async function installFirefoxWorkerFilter(connection, root, workerSource, { allHttpOrigins = false } = {}) {
+  const urls = allHttpOrigins ? ['http://*/*', 'https://*/*'] : LOOPBACK_URLS;
   const acorn = await fs.readFile(path.join(__dirname, 'vendor', 'acorn-runtime.js'), 'utf8');
   const filter = `'use strict';
 const JAVASCRIPT_MIMES = new Set(${JSON.stringify([...JAVASCRIPT_MIMES])});
-(${workerResponseListener})(browser.webRequest, ${JSON.stringify(LOOPBACK_URLS)}, ${JSON.stringify(workerSource)},
+(${workerResponseListener})(browser.webRequest, ${JSON.stringify(urls)}, ${JSON.stringify(workerSource)},
   globalThis.acorn, ${workerInjectionPosition}, ${isJavaScriptMime}, ${MAX_WORKER_BYTES});
 `;
   const manifest = {
     manifest_version: 2,
-    name: 'OpenBrowser local Worker delivery',
+    name: 'OpenBrowser Worker delivery',
     version: '1.0',
     browser_specific_settings: { gecko: { id: EXTENSION_ID } },
     permissions: ['webRequest', 'webRequestBlocking', 'webRequestFilterResponse',
-      'webRequestFilterResponse.serviceWorkerScript', ...LOOPBACK_URLS],
+      'webRequestFilterResponse.serviceWorkerScript', ...urls],
     background: { scripts: ['acorn.js', 'worker-filter.js'] },
   };
   const extensionPath = path.join(root, 'OpenBrowserLocalWorkers.xpi');
@@ -112,7 +113,7 @@ const JAVASCRIPT_MIMES = new Set(${JSON.stringify([...JAVASCRIPT_MIMES])});
     { name: 'worker-filter.js', data: filter },
   ]));
   const result = await connection.command('webExtension.install', { extensionData: { type: 'path', path: extensionPath } });
-  if (result.extension !== EXTENSION_ID) throw Error('Firefox 本地 Worker 过滤器身份不匹配');
+  if (result.extension !== EXTENSION_ID) throw Error('Firefox Worker 过滤器身份不匹配');
 }
 
-module.exports = { installFirefoxLocalWorkerFilter, LOOPBACK_HOSTS };
+module.exports = { installFirefoxWorkerFilter, LOOPBACK_HOSTS };

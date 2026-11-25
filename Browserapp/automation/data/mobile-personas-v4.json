@@ -1,0 +1,33 @@
+{
+  "sources": {
+    "playwright": "https://github.com/microsoft/playwright/blob/main/packages/isomorphic/deviceDescriptorsSource.json",
+    "samsung-a55": "https://www.samsung.com/uk/smartphones/galaxy-a/galaxy-a55-5g-awesome-navy-256gb-sm-a556bzkceub/",
+    "samsung-a55-updates": "https://doc.samsungmobile.com/SM-A556B/029693240325/eng.html",
+    "exynos-1480": "https://semiconductor.samsung.com/processor/mobile-processor/exynos-1480/",
+    "samsung-flip6": "https://images.samsung.com/is/content/samsung/assets/us/business/mobile/phones/galaxy-z-flip6/specs-pdf/B2B_Galaxy_Z_Flip6_Spec_Sheet.pdf",
+    "samsung-fold6": "https://images.samsung.com/is/content/samsung/assets/us/2407/business/mobile/phones/q6/07042024/B2B-Galaxy-Z-Fold6-Spec-Sheets.pdf",
+    "snapdragon-foldables": "https://www.qualcomm.com/news/releases/2024/07/the-most-advanced-snapdragon-mobile-platform--snapdragon-8-gen-3",
+    "iphone-11-pro-max": "https://support.apple.com/en-us/111878",
+    "iphone-12-pro": "https://support.apple.com/en-us/111875",
+    "iphone-12-pro-max": "https://support.apple.com/en-us/111874",
+    "iphone-13-pro": "https://support.apple.com/en-us/111871",
+    "iphone-13-pro-max": "https://support.apple.com/en-us/111870",
+    "iphone-14-pro-max": "https://support.apple.com/en-us/111846",
+    "iphone-se3": "https://support.apple.com/en-us/111866"
+  },
+  "devices": [
+    {"os": "android", "name": "Pixel 6a", "model": "Pixel 6a", "width": 412, "height": 915, "dpr": 2.625, "panel": [1080, 2400], "cores": 8, "osVersions": [12, 13, 14, 15, 16, 17], "gpuVendor": "ARM", "gpuRenderer": "Mali-G78", "source": ["pixel-specs", "android17-pixel", "playwright"], "ramGiB": 6},
+    {"os": "android", "name": "Pixel 6 Pro", "model": "Pixel 6 Pro", "width": 412, "height": 892, "dpr": 3.5, "panel": [1440, 3120], "cores": 8, "osVersions": [12, 13, 14, 15, 16, 17], "gpuVendor": "ARM", "gpuRenderer": "Mali-G78", "source": ["pixel-specs", "android17-pixel", "playwright"], "ramGiB": 12},
+    {"os": "android", "name": "Pixel 7 Pro", "model": "Pixel 7 Pro", "width": 412, "height": 892, "dpr": 3.5, "panel": [1440, 3120], "cores": 8, "osVersions": [13, 14, 15, 16, 17], "gpuVendor": "ARM", "gpuRenderer": "Mali-G710", "source": ["pixel-specs", "android17-pixel", "playwright"], "ramGiB": 12},
+    {"os": "android", "name": "Galaxy A55 5G", "model": "SM-A556B", "width": 480, "height": 1040, "dpr": 2.25, "panel": [1080, 2340], "cores": 8, "osVersions": [14, 15, 16], "gpuVendor": "Samsung", "gpuRenderer": "Xclipse 530", "source": ["samsung-a55", "exynos-1480", "samsung-a55-updates", "playwright"], "ramGiB": 8},
+    {"os": "android", "name": "Galaxy Z Flip6", "model": "SM-F741U", "width": 360, "height": 880, "dpr": 3, "panel": [1080, 2640], "cores": 8, "osVersions": [14, 15, 16], "gpuVendor": "Qualcomm", "gpuRenderer": "Adreno (TM) 750", "source": ["samsung-flip6", "snapdragon-foldables", "oneui8", "playwright"], "ramGiB": 12},
+    {"os": "android", "name": "Galaxy Z Fold6", "model": "SM-F956U", "width": 928, "height": 1080, "dpr": 2, "panel": [1856, 2160], "cores": 8, "osVersions": [14, 15, 16], "gpuVendor": "Qualcomm", "gpuRenderer": "Adreno (TM) 750", "source": ["samsung-fold6", "snapdragon-foldables", "oneui8", "playwright"], "ramGiB": 12},
+    {"os": "ios", "name": "iPhone 11 Pro Max", "model": "iPhone 11 Pro Max", "width": 414, "height": 896, "dpr": 3, "panel": [1242, 2688], "cores": 6, "osVersions": [16, 17, 18, 26, 27], "gpuVendor": "Apple Inc.", "gpuRenderer": "Apple GPU", "source": ["iphone-11-pro-max", "ios26", "ios27", "playwright"]},
+    {"os": "ios", "name": "iPhone 12 Pro", "model": "iPhone 12 Pro", "width": 390, "height": 844, "dpr": 3, "panel": [1170, 2532], "cores": 6, "osVersions": [16, 17, 18, 26, 27], "gpuVendor": "Apple Inc.", "gpuRenderer": "Apple GPU", "source": ["iphone-12-pro", "ios26", "ios27", "playwright"]},
+    {"os": "ios", "name": "iPhone 12 Pro Max", "model": "iPhone 12 Pro Max", "width": 428, "height": 926, "dpr": 3, "panel": [1284, 2778], "cores": 6, "osVersions": [16, 17, 18, 26, 27], "gpuVendor": "Apple Inc.", "gpuRenderer": "Apple GPU", "source": ["iphone-12-pro-max", "ios26", "ios27", "playwright"]},
+    {"os": "ios", "name": "iPhone 13 Pro", "model": "iPhone 13 Pro", "width": 390, "height": 844, "dpr": 3, "panel": [1170, 2532], "cores": 6, "osVersions": [16, 17, 18, 26, 27], "gpuVendor": "Apple Inc.", "gpuRenderer": "Apple GPU", "source": ["iphone-13-pro", "ios26", "ios27", "playwright"]},
+    {"os": "ios", "name": "iPhone 13 Pro Max", "model": "iPhone 13 Pro Max", "width": 428, "height": 926, "dpr": 3, "panel": [1284, 2778], "cores": 6, "osVersions": [16, 17, 18, 26, 27], "gpuVendor": "Apple Inc.", "gpuRenderer": "Apple GPU", "source": ["iphone-13-pro-max", "ios26", "ios27", "playwright"]},
+    {"os": "ios", "name": "iPhone 14 Pro Max", "model": "iPhone 14 Pro Max", "width": 430, "height": 932, "dpr": 3, "panel": [1290, 2796], "cores": 6, "osVersions": [16, 17, 18, 26, 27], "gpuVendor": "Apple Inc.", "gpuRenderer": "Apple GPU", "source": ["iphone-14-pro-max", "ios26", "ios27", "playwright"]},
+    {"os": "ios", "name": "iPhone SE (3rd generation)", "model": "iPhone SE 3rd generation", "width": 375, "height": 667, "dpr": 2, "panel": [750, 1334], "cores": 6, "osVersions": [16, 17, 18, 26, 27], "gpuVendor": "Apple Inc.", "gpuRenderer": "Apple GPU", "source": ["iphone-se3", "ios26", "ios27", "playwright"]}
+  ]
+}

@@ -1,21 +1,24 @@
 'use strict';
 
 // Resolve declared UA intent without I/O, host injection or device sampling.
-const { buildUaProfile, randomUaForSeed, normalizeUaOs, parseOsFromUa } = require('../user-agent');
+const { buildUaProfile, randomUaForSeed, normalizeUaOs, normalizeSelectedOsVersion, desktopUaOsForRelease, parseOsFromUa } = require('../user-agent');
 const { OPENBROWSER_KERNEL_VERSION } = require('../versions');
-const { resolveUaPatchVersion } = require('../ua-version');
+const { resolveUaPatchVersion, resolvePublishedChromeVersion } = require('../ua-version');
 
 function normalizeClientHints(hints) {
   // Normalize at the configuration boundary so custom, random and mobile UA
   // paths use one precedence. Never add normalized keys to the saved object.
   const normalized = { ...hints };
-  if (!normalized.platform_version && hints.platformVersion) normalized.platform_version = hints.platformVersion;
+  if (normalized.platform_version == null && hints.platformVersion != null) normalized.platform_version = hints.platformVersion;
   const fullVersion = hints.uaFullVersion || hints.fullVersion;
   if (!normalized.ua_full_version && fullVersion) normalized.ua_full_version = fullVersion;
   return normalized;
 }
 
-function resolvePersonaUa({ profile, privacy, fpIn, draw }) {
+function resolvePersonaUa({ profile, privacy, fpIn, draw, fingerprintVersion }) {
+  const selectedVersion = fingerprintVersion >= 3
+    ? normalizeSelectedOsVersion(profile.osVersion)
+    : String(profile.osVersion || '').trim();
   const uaOverride = String(fpIn.userAgent || profile.userAgent || '').trim();
   const rawClientHints = (fpIn.clientHints && typeof fpIn.clientHints === 'object')
     ? fpIn.clientHints
@@ -34,11 +37,17 @@ function resolvePersonaUa({ profile, privacy, fpIn, draw }) {
   let uaOverrideStr = uaOverride;
   const strictMajor = kernelMajor || defaultKernelMajor;
   const kernelFull = profile.kernelVersion || OPENBROWSER_KERNEL_VERSION;
-  const strictFull = (fpIn.uaPatchRandomized && resolveUaPatchVersion(kernelFull, uaOverride)) || kernelFull;
+  const configuredOs = normalizeUaOs(fpIn.os || clientHintsIn.os || profile.os);
+  const uaOs = configuredOs || (uaOverride ? parseOsFromUa(uaOverride) : '');
+  const releaseOs = uaOs === 'macos' && clientHintsIn.architecture === 'arm' ? 'macos_arm' : uaOs;
+  const strictFull = (fpIn.uaVersionRandomized
+    ? resolvePublishedChromeVersion(kernelFull, releaseOs, uaOverride)
+    : fpIn.uaPatchRandomized && resolveUaPatchVersion(kernelFull, uaOverride)) || kernelFull;
   const strictUa = fpIn.uaStrict || fpIn.uaGenerated;
   if (strictUa && uaOverride && strictMajor) {
+    const fullUa = fpIn.uaVersionRandomized || fpIn.uaPatchRandomized || fpIn.uaReduced === false;
     uaOverrideStr = uaOverride.replace(/(Chrome|Chromium|CriOS)\/[\d.]+/i,
-      (_, brand) => `${brand}/${brand.toLowerCase() === 'crios' || fpIn.uaPatchRandomized || fpIn.uaReduced === false ? strictFull : `${strictMajor}.0.0.0`}`);
+      (_, brand) => `${brand}/${brand.toLowerCase() === 'crios' || fullUa ? strictFull : `${strictMajor}.0.0.0`}`);
   }
   let uaProfile;
   if (uaOverrideStr) {
@@ -49,13 +58,13 @@ function resolvePersonaUa({ profile, privacy, fpIn, draw }) {
       userAgent: uaOverrideStr,
       // profile.os participates so a saved "macos_arm" profile keeps its Apple Silicon
       // identity (preset pins architecture=arm) even when it also pins a custom UA string.
-      os: normalizeUaOs(fpIn.os || clientHintsIn.os || profile.os) || osFromUa,
+      os: configuredOs || osFromUa,
       chromeMajor: (strictUa && strictMajor) || Number(fpIn.chromeMajor || clientHintsIn.chromeMajor) || undefined,
       chromeFull: strictUa ? strictFull : (fpIn.ua_full_version || clientHintsIn.ua_full_version || fpIn.fullVersion),
       platform: fpIn.platform,
       chPlatform: clientHintsIn.chPlatform || clientHintsIn.platform,
       architecture: clientHintsIn.architecture ?? fpIn.architecture,
-      platform_version: clientHintsIn.platform_version || fpIn.platformVersion,
+      platform_version: clientHintsIn.platform_version ?? fpIn.platformVersion,
       model: clientHintsIn.model,
       mobile: clientHintsIn.mobile,
       wow64: clientHintsIn.wow64,
@@ -72,7 +81,8 @@ function resolvePersonaUa({ profile, privacy, fpIn, draw }) {
       // The UA is the source of truth for every OS-facing fingerprint surface.
       // macos_arm goes through as-is: OS_PRESETS.macos_arm emits the same MacIntel UA token
       // but pins Client Hints architecture=arm, which downstream persona/WebGL pools key on.
-      osList: desktopRequested ? [desktopRequested] : ['windows', 'windows', 'macos', 'linux'],
+      osList: desktopRequested ? [fingerprintVersion >= 3 ? desktopUaOsForRelease(desktopRequested, selectedVersion) : desktopRequested]
+        : ['windows', 'windows', 'macos', 'linux'],
     });
     // Apply explicit clientHints overrides on top of seeded UA
     if (Object.keys(clientHintsIn).length) {
@@ -88,16 +98,17 @@ function resolvePersonaUa({ profile, privacy, fpIn, draw }) {
 
   // Roxy 对齐：编辑器「系统版本」下拉（profile.osVersion）参与 UA token 与
   // Client Hints platformVersion 生成；未选择时保持原有随机 UA 不变。
-  if (!uaOverrideStr && String(profile.osVersion || '').trim()) {
+  if (!uaOverrideStr && selectedVersion) {
     uaProfile = buildUaProfile({
       ...clientHintsIn,
       os: uaProfile.os || parseOsFromUa(uaProfile.userAgent),
+      ...(fingerprintVersion >= 3 ? { architecture: clientHintsIn.architecture ?? uaProfile.metadata?.architecture } : {}),
       chromeMajor: uaProfile.chromeMajor,
       ua_full_version: uaProfile.chromeFull,
-      osVersion: String(profile.osVersion).trim(),
+      osVersion: selectedVersion,
     });
   }
-  return { uaProfile, uaOverrideStr, clientHintsIn, kernelMajor, defaultKernelMajor };
+  return { uaProfile, uaOverrideStr, clientHintsIn, kernelMajor, defaultKernelMajor, selectedVersion };
 }
 
 module.exports = { resolvePersonaUa };

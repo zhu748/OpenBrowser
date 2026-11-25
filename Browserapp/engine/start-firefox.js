@@ -19,6 +19,7 @@ const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = req
 const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartupError, isChildExited } = require('./index');
 const { prepareLaunchProfile, createStartupResources, reportPlatformPreflight } = require('./launch-preparation');
 const { writeFirefoxLaunchPreferences } = require('./launch-preferences');
+const { hostScreenSummary } = require('./launch-display');
 const { ensureLegacyFingerprintSeed } = require('./launch-profile');
 const { profileWriteGuard } = require('./profile-write-guard');
 const { captureProfileLaunchRevision } = require('./profile-lifecycle');
@@ -207,6 +208,7 @@ module.exports = {
       assertLaunchProfileCurrent();
       const fingerprint = buildFirefoxFingerprint({
         ...profile,
+        hostScreen: hostScreenSummary(),
         fingerprintLaunchSeed: profile.privacy?.refreshFingerprintOnStart ? randomBytes(16).toString('hex') : '',
       }, browser.version);
       let customStartUrls = this.resolveStartupUrls(profile);
@@ -232,78 +234,31 @@ module.exports = {
       if (profile.networkMode === 'proxy' && !proxyConfig) {
         throw Object.assign(new Error('代理模式缺少有效上游代理，已停止启动'), { code: 'proxy-required' });
       }
-      let proxy = null;
-      let workerMitm = null;
-      let workerSource;
-      // Both paths route through the per-profile worker-script MITM forwarder so
-      // worker scopes receive the persona JS-only fields (hardwareConcurrency)
-      // that no BiDi channel can deliver. With a configured upstream proxy the
-      // forwarder chains through a bridge for EVERY configured proxy, including
-      // unauthenticated HTTP(S). The bridge owns upstream credentials. Startup
-      // fails if required worker delivery or certificate trust cannot be set up.
-      try {
-        const { FirefoxWorkerMitmProxy } = require('../automation/firefox-worker-mitm-proxy');
-        const { buildWorkerInjectionScript } = require('../automation/fingerprint');
-        workerSource = buildWorkerInjectionScript(fingerprint);
-        let chain = null;
-        if (proxyConfig) {
-          proxyForwarder = await startAuthenticatedProxy(proxyConfig, (value) => this.emit({ type: 'proxy-error', id: profile.id, code: value.code, message: value.message }));
-          startupResources.proxyForwarder = proxyForwarder;
-          // The bridge is a loopback HTTP proxy and owns authentication;
-          // the Worker forwarder never receives upstream credentials.
-          const bridgeUrl = new URL(proxyForwarder.url);
-          chain = { host: bridgeUrl.hostname, port: Number(bridgeUrl.port) || 80 };
-        }
-        let upstreamCaBundle = null;
-        try {
-          const caPath = '/etc/ssl/certs/ca-certificates.crt';
-          if (require('fs').existsSync(caPath)) upstreamCaBundle = require('fs').readFileSync(caPath);
-        } catch (_) { /* optional */ }
-        workerMitm = await FirefoxWorkerMitmProxy.create({
-          workerSource,
-          ...(upstreamCaBundle ? { upstreamCaBundle } : {}),
-          ...(chain ? {
-            upstreamProxy: {
-              host: chain.host,
-              port: chain.port,
-            },
-          } : {}),
-        });
-        startupResources.workerMitmProxy = workerMitm;
-        await workerMitm.start();
-        const { installFirefoxCa } = require('../automation/firefox-trust-installer');
-        const imported = installFirefoxCa(root, workerMitm.ca.cert);
-        if (!imported.ok) {
-          throw Object.assign(new Error('Firefox Worker CA import failed: ' + imported.reason), {
-            code: 'WORKER_MITM_CA_IMPORT_FAILED',
-          });
-        }
-        proxy = workerMitm.url;
-      } catch (mitmError) {
-        this.emit({ type: 'proxy-error', id: profile.id, code: mitmError.code || 'WORKER_MITM_UNAVAILABLE', message: mitmError.message });
-        throw mitmError;
+      // The browser filters Worker response bodies after native TLS and HTTP.
+      // Explicit upstream proxies retain the existing bridge and CONNECT path.
+      if (proxyConfig) {
+        proxyForwarder = await startAuthenticatedProxy(proxyConfig, (value) => this.emit({
+          type: 'proxy-error', id: profile.id, code: value.code, message: value.message,
+        }));
+        startupResources.proxyForwarder = proxyForwarder;
       }
-      // Firefox cannot express a bypass list from a URL string the way Chrome's
-      // --proxy-bypass-list does; loopback is always excluded via prefs below.
-
+      const { buildWorkerInjectionScript } = require('../automation/fingerprint');
+      const workerSource = buildWorkerInjectionScript(fingerprint);
+      const { installFirefoxWorkerFilter, LOOPBACK_HOSTS } = require('../automation/firefox-local-workers');
       currentStage = 'configure'; this.emitStartProgress(profile.id, 'configure', 48, '正在写入 Firefox 配置…', lifecycleGeneration);
-      const workerMitmActive = Boolean(workerMitm);
-      const { installFirefoxLocalWorkerFilter, LOOPBACK_HOSTS } = require('../automation/firefox-local-workers');
       await writeFirefoxLaunchPreferences(root, {
         userAgent: fingerprint.userAgent,
         // Firefox uses the unweighted list for native navigator.languages as well as HTTP.
         acceptLanguages: collectAcceptLanguages(fingerprint, profile),
         locale: fingerprint.languages[0],
-        proxyEndpoint: proxy && proxy !== 'direct://' ? proxy : '',
-        // The managed start page and other local services remain local. The
-        // forwarder's external destination policy must not block the start page.
+        proxyEndpoint: proxyForwarder?.url || '',
         noProxyHosts: LOOPBACK_HOSTS.join(', '),
         extraPrefs: firefoxExtraUserPrefs(launchOptions.blockImages ? { ...profile, advanced: { ...profile.advanced, blockImages: true } } : profile, fingerprint),
       }, { beforeReplace: () => {
         this.assertStartGenerationActive(profile.id, lifecycleGeneration);
         assertLaunchProfileCurrent();
       } });
-      await require('../automation/firefox-worker-cache').prepareFirefoxWorkerCache(root, workerSource, { localDelivery: true });
+      await require('../automation/firefox-worker-cache').prepareFirefoxWorkerCache(root, workerSource, { allHttpOrigins: true });
       currentStage = 'spawn'; this.emitStartProgress(profile.id, 'spawn', 62, '正在启动 Firefox…', lifecycleGeneration);
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       const headless = launchOptions.headless === true || /^(1|true|new)$/i.test(String(process.env.OPENBROWSER_HEADLESS || '').trim());
@@ -377,7 +332,6 @@ module.exports = {
         child,
         cdpConnection: null,
         proxyForwarder,
-        workerMitmProxy: workerMitm,
         markerProcess: null,
         profileLock,
         pid: child.pid,
@@ -425,8 +379,7 @@ module.exports = {
       item.bidiConnection = connection;
       await connection.open();
       const delivered = await initializeFirefoxFingerprint(connection, fingerprint, profile, {
-        workerProxyReady: workerMitmActive,
-        installLocalWorkerFilter: () => installFirefoxLocalWorkerFilter(connection, root, workerSource),
+        installWorkerFilter: () => installFirefoxWorkerFilter(connection, root, workerSource, { allHttpOrigins: true }),
         onWorkerError: (error) => {
           item.workerFingerprintError = error.message;
           this.emit({ type: 'worker-fingerprint-injection-failed', id: profile.id, message: error.message });

@@ -2,18 +2,14 @@
 
 const { fromRoxy } = require("../profile-dto");
 const crypto = require('node:crypto');
-const { buildUaProfile } = require('../../automation/user-agent');
+const { buildUaProfile, withChromeUaVersion, normalizeUaOs, normalizeSelectedOsVersion } = require('../../automation/user-agent');
+const { pickPublishedChromeVersion } = require('../../automation/ua-version');
 const { firefoxUserAgent } = require('../../automation/kernel-versions');
-const { buildFingerprint } = require('../../automation/fingerprint');
+const { buildFingerprint, assertFingerprintConsistency } = require('../../automation/fingerprint');
+const { hostScreenSummary } = require('../../engine/launch-display');
 const { CURRENT_FINGERPRINT_VERSION } = require('../../automation/fingerprint/generation');
-const { randomUaPatchVersion } = require('../../automation/ua-version');
 const { previewIdentity, reusePreviewIdentity } = require('../fingerprint-draft');
-
-function randomMacAddress() {
-  const bytes = crypto.randomBytes(6);
-  bytes[0] = (bytes[0] & 0xfc) | 0x02;
-  return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join(':').toUpperCase();
-}
+const { formatLocalMacAddress } = require('../../shared/profile-values');
 
 async function hostShortcut(service, p) {
   return require("../host-actions").shortcut(service, p);
@@ -34,51 +30,97 @@ async function fingerprintPreview(service, p) {
   // Keep the settings that an edit would inherit while rerolling the old UA and seed.
   const input = { ...p, userAgent: p.userAgent ?? '', windowName: "Preview" };
   delete input._fingerprintDraft;
+  const webglMode = p.webGLInfo ?? ({ real: 0, noise: 1, custom: 2, blocked: 0 }[edited?.privacy?.webglMeta] ?? 1);
+  if (!reused && webglMode === 1) {
+    input.webGLManufacturer = '';
+    input.webGLRender = '';
+  }
   const base = { ...edited, id: reused?.id || edited?.id,
     fingerprintVersion: reused?.version ?? CURRENT_FINGERPRINT_VERSION };
+  if (edited?.privacy?.fingerprint && !input.userAgent) {
+    // A blank UA can still have saved hints. Clear those before sampling unless
+    // this request below explicitly reuses the matching saved identity.
+    base.privacy = { ...edited.privacy, fingerprint: { ...edited.privacy.fingerprint } };
+    delete base.privacy.fingerprint.clientHints;
+  }
   const first = fromRoxy(input, base);
+  const savedHints = edited?.privacy?.fingerprint?.clientHints;
+  const osFamily = normalizeUaOs(first.os);
+  if (reused && reused.seed === edited?.fingerprintSeed && reused.version === edited?.fingerprintVersion
+    && savedHints
+    && osFamily === normalizeUaOs(edited.os)
+    && normalizeSelectedOsVersion(first.osVersion) === normalizeSelectedOsVersion(edited.osVersion)) {
+    // Only reuse these constraints for the saved seed. A pending reroll
+    // resolves its own device and OS release from the draft seed.
+    first.privacy.fingerprint = { ...first.privacy.fingerprint, clientHints: {
+      architecture: savedHints.architecture,
+      deviceModel: savedHints.deviceModel,
+      platform_version: savedHints.platform_version ?? savedHints.platformVersion,
+    } };
+  }
   const browser = e.chooseBrowser(first, first.engine);
   const version = e.kernelManager?.readInstalledVersion
     ? await e.kernelManager.readInstalledVersion(browser)
     : browser.version;
+  const hostScreen = hostScreenSummary();
   return Array.from({ length: count }, (_, index) => {
     // Each preview keeps the storage identity its eventual create will use.
     const profile = index === 0 ? first : fromRoxy(input, base);
     profile.fingerprintSeed = reused?.seed ?? crypto.randomBytes(16).toString('hex');
     const firefox = profile.engine === 'firefox';
-    if (!firefox && profile.privacy.macMode === 'custom' && !profile.privacy.mac)
-      profile.privacy.mac = randomMacAddress();
-    const fullVersion = firefox ? null : randomUaPatchVersion(version, { previousUserAgent: p.previousUserAgent });
-    const options = { os: profile.os, osVersion: profile.osVersion,
-      chromeMajor: Number(version.split('.')[0]), chromeFull: fullVersion };
-    const os = /mac/i.test(profile.os) ? 'mac' : /win/i.test(profile.os) ? 'win' : 'linux';
-    const generated = firefox
-      ? buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, version) })
-      : buildUaProfile({ ...options, reduced: false });
-    // Mobile templates own the model and release; they are selected below.
-    const mobile = /android|ios|iphone|ipad/i.test(profile.os);
-    if (!mobile) {
+    if (!firefox && profile.fingerprintVersion <= 3 && profile.privacy.macMode === 'custom' && !profile.privacy.mac)
+      profile.privacy.mac = formatLocalMacAddress(crypto.randomBytes(6));
+    if (firefox) {
+      const os = /mac/i.test(profile.os) ? 'mac' : /win/i.test(profile.os) ? 'win' : 'linux';
+      const generated = buildUaProfile({ os: profile.os, userAgent: firefoxUserAgent(os, version) });
       profile.userAgent = generated.userAgent;
       profile.privacy.fingerprint = { ...profile.privacy.fingerprint,
-        uaGenerated: true, uaReduced: false, uaPatchRandomized: !firefox, clientHints: generated.clientHints };
+        uaGenerated: true, uaReduced: false, uaPatchRandomized: false, clientHints: generated.clientHints };
     }
     // A draft describes the next saved configuration, even while the old
     // browser is running. fingerprintFor(id) deliberately returns that live
     // snapshot and must not be used to sample a proposed identity.
-    const configured = { ...profile, kernelVersion: version };
-    const f = profile.engine === 'firefox'
+    const configured = { ...profile, kernelVersion: version, hostScreen };
+    let f = firefox
       ? require('../../automation/firefox-fingerprint').buildFirefoxFingerprint(configured, version)
       : buildFingerprint(configured);
+    const randomizeUaVersion = !firefox && p.randomizeUaVersion === true;
+    if (randomizeUaVersion) {
+      const ua = withChromeUaVersion(f.uaProfile, pickPublishedChromeVersion(version, f.os, p.previousUserAgent));
+      f = buildFingerprint({ ...configured, userAgent: ua.userAgent, privacy: { ...configured.privacy,
+        fingerprint: { ...configured.privacy.fingerprint, uaGenerated: true, uaReduced: false,
+          uaVersionRandomized: true, uaPatchRandomized: false, clientHints: ua.clientHints },
+      } });
+    }
+    if (!firefox) assertFingerprintConsistency(f);
+    const hardwareConcurrent = f.hardwareConcurrency == null
+      ? (profile.privacy.cores === 0 ? '0' : undefined) : String(f.hardwareConcurrency);
+    const deviceMemory = f.deviceMemory == null
+      ? (profile.privacy.memory === 0 ? '0' : undefined) : String(f.deviceMemory);
+    const generatedHardware = {
+      ...(profile.privacy.cores == null && hardwareConcurrent !== undefined ? { hardwareConcurrent } : {}),
+      ...(profile.privacy.memory == null && deviceMemory !== undefined ? { deviceMemory } : {}),
+      ...(webglMode === 1 && !profile.privacy.fingerprint?.webglVendor && !profile.privacy.fingerprint?.webglRenderer
+        ? { webGLManufacturer: f.webgl.vendor, webGLRender: f.webgl.renderer } : {}),
+    };
+    if (profile.fingerprintVersion >= 4) {
+      const overrides = profile.privacy.fingerprint;
+      const pinnedName = f.deviceNameMode === 'custom'
+        && String(overrides?.deviceName || profile.privacy.deviceName || '').trim();
+      if (f.deviceName && !pinnedName) generatedHardware.deviceName = f.deviceName;
+      if (f.mac.value && !(overrides?.mac || profile.privacy.mac)) generatedHardware.macAddr = f.mac.value;
+    }
     return {
       userAgent: f.userAgent,
       webGLManufacturer: f.webgl.vendor,
       webGLRender: f.webgl.renderer,
-      deviceName: f.deviceName,
+      ...(f.deviceName ? { deviceName: f.deviceName } : {}),
       ...(f.mac.value ? { macAddr: f.mac.value } : {}),
-      hardwareConcurrent: f.hardwareConcurrency == null ? undefined : String(f.hardwareConcurrency),
-      deviceMemory: f.deviceMemory == null ? undefined : String(f.deviceMemory),
+      hardwareConcurrent,
+      deviceMemory,
       _fingerprintDraft: { ...previewIdentity(e, profile), generated: true,
-        userAgent: f.userAgent, uaReduced: mobile, uaPatchRandomized: !mobile && !firefox, clientHints: f.clientHints },
+        userAgent: f.userAgent, uaReduced: !randomizeUaVersion && !firefox && f.os !== 'ios',
+        uaVersionRandomized: randomizeUaVersion, uaPatchRandomized: false, clientHints: f.clientHints, generatedHardware },
       ...(p.fontType
         ? { font: f.fonts.list.join(";"), fontList: f.fonts.list }
         : {}),
@@ -96,11 +138,11 @@ async function hostDictionary() {
 }
 
 async function fingerprintFields(_service, p) {
-  const profile = fromRoxy({ os: p.os, windowName: 'Fingerprint fields' });
+  const profile = fromRoxy({ os: p.os, windowName: 'Fingerprint fields', macInfo: p.macInfo === true });
   const f = buildFingerprint({ ...profile, fingerprintSeed: crypto.randomBytes(16).toString('hex') });
   return { getwebGLNoiseValue: f.webgl.mark, getCanvasContextNoiseValue: f.canvas.mark,
     getClientRectsValue: f.clientRects, getSpeechSynthesis: f.speech.voices, getAllowFontList: f.fonts.list,
-    deviceName: f.deviceName, ...(p.macInfo === true ? { macAddr: randomMacAddress() } : {}) };
+    deviceName: f.deviceName, ...(f.mac.value ? { macAddr: f.mac.value } : {}) };
 }
 
 async function hostNetwork(service, p) {

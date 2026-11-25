@@ -1,10 +1,9 @@
 import { h } from './workbench-vue.js';
-import { En as unsupportedKernel, h as api, ln as systemInfo, m as loadSystemOptions, qt as BrowserType } from './utils-BIWenCnY.js';
+import { En as unsupportedKernel, ln as systemInfo, m as loadSystemOptions, qt as BrowserType } from './utils-BIWenCnY.js';
 import { t as useDialog } from './useDialog-BC-nc8J-.js';
 import KernelUpgradeDialog from './workbench-kernel-upgrade-dialog.js';
 
 const legacyChromium = '109';
-const requestLimit = 100;
 const previewLimit = 10;
 const chromium = BrowserType.Chrome;
 const firefox = BrowserType.Firefox;
@@ -53,57 +52,13 @@ function planUpgrade(rows, kernels) {
   return { available, groups: [...groups.values()] };
 }
 
-async function requireData(response, onError) {
-  const { code, msg, data } = await response;
-  if (code === 0) return data;
-  onError(code, msg);
-  throw Error(msg);
-}
-function incompleteFingerprint(onError) {
-  const message = $t('无法同步内核关联的指纹信息，升级已取消');
-  onError(-1, message);
-  return Error(message);
-}
-async function fingerprintUpdates(group, onError) {
-  const rows = new Map();
-  for (let offset = 0; offset < group.ids.length; offset += requestLimit) {
-    const batch = group.ids.slice(offset, offset + requestLimit);
-    const result = await requireData(api.window.userGetWindowInfoV2List({
-      windowIds: batch.join(','), isDelete: 0, page_index: 1, page_size: batch.length,
-    }), onError);
-    for (const row of result?.rows ?? []) rows.set(String(row.id), row);
-  }
-  const variants = new Map();
-  for (const [index, id] of group.ids.entries()) {
-    const row = rows.get(String(id));
-    if (!row?.os) throw incompleteFingerprint(onError);
-    const { os, osVersion, browserVersion } = row;
-    const key = JSON.stringify([os, osVersion, browserVersion]);
-    if (!variants.has(key)) variants.set(key, { os, osVersion, browserVersion, indexes: [] });
-    variants.get(key).indexes.push(index);
-  }
-  const updates = Array(group.ids.length).fill(null);
-  for (const { os, osVersion, browserVersion, indexes } of variants.values()) {
-    const data = await requireData(api.window.userGetUaWebglV2List({
-      os, coreType: group.type, coreVersion: group.version, count: indexes.length,
-      ...(osVersion && { osVersion }), ...(browserVersion && { browserVersion }),
-    }), onError);
-    for (const [index, target] of indexes.entries()) {
-      const fingerprint = data?.[index];
-      if (!fingerprint?.userAgent) throw incompleteFingerprint(onError);
-      const { userAgent, webGLManufacturer, webGLRender } = fingerprint;
-      updates[target] = { userAgent, webGLManufacturer, webGLRender };
-    }
-  }
-  return updates;
-}
 function previewNames(workspace, rows) {
   const names = rows.slice(0, previewLimit)
     .map(row => row.windowSortNum == null ? row.windowName : `${workspace}-${row.windowSortNum}`).filter(Boolean);
   return names.join(', ') + (rows.length > previewLimit ? '...' : '');
 }
 
-export function useProfileKernelUpgrade({ batchModifyWindow, onlyErrorToast, showToast, getWorkspaceName }) {
+export function useProfileKernelUpgrade({ onlyErrorToast, showToast, getWorkspaceName }) {
   const [openDialog] = useDialog();
   async function onUpgradeCore(rows) {
     const { available, groups } = planUpgrade(rows, await inventory());
@@ -116,10 +71,15 @@ export function useProfileKernelUpgrade({ batchModifyWindow, onlyErrorToast, sho
       names: previewNames(workspace, group.rows), version: `${group.type} ${group.version}`,
     }));
     async function confirmUpgrade() {
-      const updates = [];
-      for (const group of groups) updates.push(await fingerprintUpdates(group, onlyErrorToast));
-      for (const [index, group] of groups.entries()) {
-        await batchModifyWindow({ ids: group.ids, coreVersion: group.version, fingerDetail: updates[index] }, true);
+      try {
+        await globalThis.__localRequest('profiles:upgrade-kernels', {
+          groups: groups.map(({ ids, version }) => ({ ids: ids.map(String), version })),
+        });
+      } catch (error) {
+        onlyErrorToast(-1, error.message);
+        throw error;
+      }
+      for (const group of groups) {
         for (const row of group.rows) row.coreVersion = group.version;
       }
       showToast(0, $t('升级成功'));

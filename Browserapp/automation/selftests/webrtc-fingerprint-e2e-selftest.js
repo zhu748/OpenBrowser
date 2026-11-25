@@ -244,7 +244,7 @@ const hostAddresses = () => Object.values(os.networkInterfaces())
   const runtime = CHROME_CANDIDATES.find((p) => { try { return fs.existsSync(p); } catch (_) { return false; } });
   if (!runtime) {
     console.log('  SKIP  no WebRTC-capable Chromium found (set OPENBROWSER_WEBRTC_RUNTIME)');
-    console.log('webrtc-fingerprint-e2e-selftest: ok');
+    process.exitCode = 2;
     return;
   }
 
@@ -287,9 +287,7 @@ const hostAddresses = () => Object.values(os.networkInterfaces())
   };
   if (!port) {
     stop();
-    console.log('  SKIP  runtime did not expose a CDP endpoint');
-    console.log('webrtc-fingerprint-e2e-selftest: ok');
-    return;
+    throw new Error('The selected runtime did not expose a CDP endpoint');
   }
 
   const wsUrl = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl;
@@ -303,6 +301,13 @@ const hostAddresses = () => Object.values(os.networkInterfaces())
   await sleep(1200);
 
   const raw = await cdp.evalValue(probe, sid);
+  if (raw.errs.length === 0 && !raw.sdp.includes('a=candidate:') && raw.candidates.length === 0) {
+    try { ws.close(); } catch (_) {}
+    stop();
+    console.log('  SKIP  the unmodified Chromium baseline did not gather ICE candidates; check managed WebRtcIPHandling policies and network availability');
+    process.exitCode = 2;
+    return;
+  }
 
   const profile = {
     id: 'webrtc-e2e', kernelVersion: '148.0.7778.165', os: 'Windows',

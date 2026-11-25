@@ -327,6 +327,7 @@ const SUITE = [
   ['selftest:inlineworkersource', 'automation/selftests/inline-worker-source-selftest.js'],
   ['selftest:fpcapabilitiesnative', 'automation/selftests/fingerprint-capabilities-native-selftest.js', { nativeOnly: true, runtimes: ['chromium'] }],
   ['selftest:fingerprintnative', 'automation/selftests/fingerprint-native-consistency-selftest.js', { nativeOnly: true, runtimes: ['chromium'] }],
+  ['selftest:transportwire', 'automation/selftests/transport-fingerprint-native-selftest.js', { nativeOnly: true, runtimes: ['chromium', 'firefox'], argsByRuntime: { firefox: ['--firefox'] } }],
   ['blobworker', 'automation/selftests/fingerprint-blob-worker-identity-gate.js', { nativeOnly: true, runtimes: ['chromium'] }],
   ['cachedsw', 'automation/selftests/fingerprint-cached-sw-identity-gate.js', { nativeOnly: true, runtimes: ['chromium'] }],
   ['selftest:firefoxfingerprint', 'automation/selftests/firefox-fingerprint-e2e-selftest.js', { nativeOnly: true, runtimes: ['firefox'] }],

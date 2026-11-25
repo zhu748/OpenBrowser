@@ -7,7 +7,47 @@
 
   const MAX_LATITUDE = 90;
   const MAX_LONGITUDE = 180;
+  const CURRENT_FINGERPRINT_VERSION = 4;
   const DEVICE_MEMORY_TIERS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
+
+  function formatLocalMacAddress(bytes) {
+    return Array.from(bytes.subarray(0, 6), (byte, index) =>
+      (index === 0 ? (byte & 0xfc) | 0x02 : byte).toString(16).padStart(2, '0').toUpperCase()
+    ).join(':');
+  }
+
+  function formatGeneratedDeviceName(os, bytes, { laptop } = {}) {
+    const platform = String(os || '').toLowerCase();
+    const prefix = platform.startsWith('mac') ? (laptop === false ? 'Mac' : 'MacBook')
+      : platform === 'linux' ? (laptop === false ? 'linux' : 'linux-laptop')
+        : platform === 'android' ? 'android'
+          : platform === 'ios' ? 'iPhone'
+            : laptop === true ? 'LAPTOP' : 'DESKTOP';
+    const suffix = Array.from(bytes.subarray(0, 7), byte => (byte % 36).toString(36)).join('');
+    return prefix + '-' + (/^(DESKTOP|LAPTOP)$/.test(prefix) ? suffix.toUpperCase() : suffix);
+  }
+
+  function resolveFingerprintDeviceSettings(privacy = {}) {
+    const fingerprint = privacy.fingerprint || {};
+    const cores = toFiniteNumber(fingerprint.cores) ?? toFiniteNumber(privacy.cores);
+    const memory = toFiniteNumber(fingerprint.memory) ?? toFiniteNumber(privacy.memory);
+    return {
+      webrtc: fingerprint.webrtc ?? privacy.webrtc ?? 'proxy',
+      deviceNameMode: fingerprint.deviceNameMode ?? privacy.deviceNameMode ?? 'noise',
+      deviceName: fingerprint.deviceName || privacy.deviceName || '',
+      macMode: fingerprint.macMode ?? privacy.macMode ?? 'real',
+      mac: fingerprint.mac || privacy.mac || '',
+      cores: cores === 0 ? 0 : normalizeHardwareConcurrency(fingerprint.hardwareConcurrency)
+        ?? (cores > 0 ? Math.min(64, Math.max(1, Math.round(cores))) : null),
+      memory: memory === 0 ? 0 : normalizeDeviceMemory(fingerprint.deviceMemory) ?? (memory === 6 ? 6 : normalizeDeviceMemory(memory)),
+    };
+  }
+
+  function geolocationUsesIp(privacy = {}) {
+    if (privacy.geoMode === 'custom') return false;
+    if (privacy.geoMode === 'ip' || privacy.geoMode === 'allow') return true;
+    return privacy.geoFromIp !== false;
+  }
 
   /** Scan without spreading rows into arguments or allocating a second array. */
   function maxProfileNumber(profiles) {
@@ -136,5 +176,6 @@
   return Object.freeze({ maxProfileNumber, toFiniteNumber, toBoundedInteger, normalizeLatitude, normalizeLongitude, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions,
     isValidLatitude, isValidLongitude, normalizeCoordinates, normalizeGeolocationAccuracy, resolveDoNotTrackMode,
     normalizeHardwareConcurrency, normalizeDeviceMemory, normalizeStabilitySettings,
-    MAX_LATITUDE, MAX_LONGITUDE, DEVICE_MEMORY_TIERS });
+    MAX_LATITUDE, MAX_LONGITUDE, DEVICE_MEMORY_TIERS, CURRENT_FINGERPRINT_VERSION,
+    formatLocalMacAddress, formatGeneratedDeviceName, resolveFingerprintDeviceSettings, geolocationUsesIp });
 });

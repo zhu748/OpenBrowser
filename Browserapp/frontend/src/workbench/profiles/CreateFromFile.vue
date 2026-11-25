@@ -1,6 +1,6 @@
 <script setup>
 import { h, ref } from 'vue';
-import { h as requests, m as kernelOptions, mt as useWorkspace, qt as browsers, s as readFields } from './utils-BIWenCnY.js';
+import { h as requests, mt as useWorkspace, qt as browsers, s as readFields } from './utils-BIWenCnY.js';
 import { a as storeToRefs, n as useNotice } from './agent-BmSFI9WH.js';
 import { t as vTooltip } from './tooltip-BYYKWrvu.js';
 import { t as Button } from './rx-button-DyzuUt-V.js';
@@ -64,13 +64,18 @@ async function create() {
 }
 
 async function fingerprintRows(rows, params) {
-  const { fontType, canvas, webGL, audioContext, speechVoices, clientRects, macInfo, os, osVersion } = readFields(previewInputs.value);
-  const settings = await kernelOptions();
+  const { fontType, canvas, webGL, audioContext, speechVoices, clientRects, macInfo } = readFields(previewInputs.value);
   const groups = new Map();
   rows.forEach((row, index) => {
-    const coreType = row.coreType || browsers.Chrome;
-    const versions = coreType === browsers.Firefox ? settings.firefoxCoreVersion : settings.coreVersion;
-    const engine = { coreType, coreVersion: row.coreVersion || versions?.[0]?.value || '', os: row.os || os, osVersion: row.osVersion || osVersion };
+    const os = row.os || params.os;
+    const matchesDefaultOs = String(os || '').toLowerCase() === String(params.os || '').toLowerCase();
+    const engine = {
+      coreType: row.coreType || params.coreType || browsers.Chrome,
+      coreVersion: row.coreVersion || '',
+      useLatestCore: !row.coreVersion,
+      os,
+      osVersion: row.osVersion || (matchesDefaultOs ? params.osVersion : '') || '',
+    };
     const key = JSON.stringify(engine);
     if (!groups.has(key)) groups.set(key, { engine, indices: [] });
     groups.get(key).indices.push(index);
@@ -79,6 +84,10 @@ async function fingerprintRows(rows, params) {
   await Promise.all(Array.from(groups.values(), async ({ engine, indices }) => {
     const selection = {
       fontType, canvas, webGL, audioContext, speechVoices, clientRects, macInfo, macAddr: params.macAddr, ...engine,
+      webGLInfo: params.webGLInfo, hardwareConcurrent: params.hardwareConcurrent, deviceMemory: params.deviceMemory,
+      ...(params.webGLInfo === 2 ? {
+        webGLManufacturer: params.webGLManufacturer, webGLRender: params.webGLRender,
+      } : {}),
     };
     // File import allows 200 rows, while a single preview request accepts 100.
     const previewLimit = 100;
@@ -89,13 +98,7 @@ async function fingerprintRows(rows, params) {
       batch.forEach((index, position) => { fingerprints[index] = previews[position]; });
     }
   }));
-  return fingerprints.map(fingerprint => ({
-    ...fingerprint,
-    webGLManufacturer: params.webGLInfo === 2 ? params.webGLManufacturer : fingerprint.webGLManufacturer,
-    webGLRender: params.webGLInfo === 2 ? params.webGLRender : fingerprint.webGLRender,
-    hardwareConcurrent: params.hardwareConcurrent || fingerprint.hardwareConcurrent,
-    deviceMemory: params.deviceMemory || fingerprint.deviceMemory,
-  }));
+  return fingerprints;
 }
 </script>
 

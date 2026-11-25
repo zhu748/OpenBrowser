@@ -3,6 +3,7 @@
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { buildEditorUa } = require('../editor-ua');
+const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
 const { buildFingerprint, buildInjectionScript, applyFingerprintToTab, assertFingerprintConsistency } = require('../fingerprint');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { evaluateFingerprintDelivery } = require('../request-header-rewriter');
@@ -49,6 +50,14 @@ function scopeFor(fp) {
 }
 
 (async () => {
+  await test('Firefox custom product and Gecko majors must match the real kernel', () => {
+    const ua = (product, gecko = product) => `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:${gecko}) Gecko/20100101 Firefox/${product}`;
+    for (const userAgent of [ua('115.0'), ua('161.0', '115.0'), ua('not-a-version')]) {
+      assert.throws(() => buildFirefoxFingerprint(profile({ engine: 'firefox', userAgent }), '161.0'), { code: 'FINGERPRINT_CONFIG_INVALID' });
+    }
+    const userAgent = ua('161.0.44', '161.0');
+    assert.equal(buildFirefoxFingerprint(profile({ engine: 'firefox', userAgent }), '161.0').userAgent, userAgent);
+  });
   await test('editor UA changes, clear and random reset cannot retain stale metadata or hidden overrides', () => {
     const generated = buildEditorUa(engine, { os: 'windows' });
     const current = profile({ userAgent: generated.userAgent, privacy: { fingerprint: { userAgent: generated.userAgent, clientHints: generated.clientHints, uaGenerated: true } } });
@@ -69,13 +78,16 @@ function scopeFor(fp) {
   await test('mobile UA generation survives the real sanitizer and selects the same device at launch', () => {
     for (const os of ['Android', 'iOS']) {
       for (const random of [false, true]) {
-        const generated = buildEditorUa(engine, { os, random, deviceSeed: 4711 });
-        const saved = profile({ os, userAgent: generated.userAgent, privacy: { fontListMode: 'real', fingerprint: { clientHints: generated.clientHints } } });
+        const generated = buildEditorUa(engine, { os, random, deviceSeed: 4711, fingerprintVersion: 3 });
+        const draft = resolveEditorUaDraft({ userAgent: generated.userAgent, generatedUa: generated });
+        const saved = profile({ os, fingerprintVersion: 3, userAgent: draft.userAgent,
+          privacy: { fontListMode: 'real', fingerprint: draft.fingerprint } });
         const fp = buildFingerprint({ ...saved, kernelVersion: version });
         assertFingerprintConsistency(fp);
         assert.equal(fp.mobileDevice.model, generated.metadata.model);
         assert.equal(fp.mobileDevice.osVersion, Number(generated.metadata.platformVersion.split('.')[0]));
-        assert.equal(fp.userAgentMetadata.fullVersion, version);
+        assert.equal(fp.userAgent, generated.userAgent);
+        assert.equal(fp.userAgentMetadata.fullVersion, generated.chromeFull);
         assert.equal(fp.clientHints.deviceModel, generated.clientHints.deviceModel);
         assert.equal(saved.privacy.fingerprint.clientHints.mobile, true);
         assert.equal(saved.privacy.fingerprint.clientHints.wow64, false);
@@ -83,10 +95,27 @@ function scopeFor(fp) {
           assert.match(fp.userAgent, /Android 10; K/);
           assert.notEqual(fp.userAgentMetadata.model, 'K');
         }
-        const seeded = randomUaForSeed(4711, { osList: [os.toLowerCase()], majors: [149], fullVersion: version });
+        const seeded = randomUaForSeed(4711, { osList: [os.toLowerCase()], majors: [149], fullVersion: version, fingerprintVersion: 3 });
         assert.equal(seeded.metadata.model, generated.metadata.model);
         assert.equal(seeded.clientHints.deviceModel, generated.clientHints.deviceModel);
       }
+    }
+  });
+  await test('custom mobile dimensions survive saving and are used for native device metrics', async () => {
+    for (const [os, dimensions] of [['Android', [390, 844]], ['iPhone', [290, 300]]]) {
+      const [width, height] = dimensions;
+      const stored = profile({ os, fingerprintVersion: 3, privacy: { fingerprint: { screenWidth: width, screenHeight: height } } });
+      const fp = buildFingerprint({ ...stored, kernelVersion: version });
+      assert.deepEqual([stored.privacy.fingerprint.screenWidth, stored.privacy.fingerprint.screenHeight], dimensions);
+      assert.deepEqual(fp.mobileDevice.screen, { width, height });
+      const commands = new Map();
+      await applyFingerprintToTab(async (method, params) => {
+        commands.set(method, params);
+        return method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'mobile-layout' } : {};
+      }, null, fp, stored);
+      const metrics = commands.get('Emulation.setDeviceMetricsOverride');
+      assert.deepEqual([metrics.screenWidth, metrics.screenHeight, metrics.width, metrics.height],
+        [width, height, width, height > 320 ? height - 56 : height]);
     }
   });
   await test('known hardware corrections replace the source record and placeholder geometries never enter sampling', () => {
@@ -184,13 +213,19 @@ function scopeFor(fp) {
     const { scope } = scopeFor(fp);
     scope.entropy = { ...fp.userAgentMetadata, uaFullVersion: fp.userAgentMetadata.fullVersion };
     scope.brands = fp.userAgentMetadata.brands;
+    scope.network = fp.connection;
     vm.runInContext(`
       const isSecureContext=true;
       Object.defineProperty(globalThis,'isSecureContext',{value:true});
       Object.defineProperty(Navigator.prototype,'userAgentData',{configurable:true,get(){return {platform:'Windows',brands,mobile:false,getHighEntropyValues:async()=>entropy}}});
+      Object.defineProperty(Navigator.prototype,'connection',{configurable:true,get(){return network}});
     `, scope);
     const live = await vm.runInContext(LIVE_PROBE_EXPRESSION, scope);
     assert.equal(evaluateFingerprintDelivery({}, fp, live, { strict: true }).ok, true);
+    for (const [patch, field] of [[{ webdriver: true }, 'webdriver'], [{ connection: null }, 'connection'], [{ connection: {} }, 'connection.rtt']]) {
+      const invalid = evaluateFingerprintDelivery({}, fp, { ...live, ...patch }, { strict: true });
+      assert.ok(invalid.mismatches.some(mismatch => mismatch.field === field));
+    }
     for (const patch of [{ uaFullVersion: '120.0.0.0' }, { model: 'another-device' }, { architecture: 'arm' }, { fullVersionList: [] }]) {
       const result = evaluateFingerprintDelivery({}, fp, { ...live, uaDataHighEntropy: { ...live.uaDataHighEntropy, ...patch } }, { strict: true });
       assert.equal(result.ok, false, JSON.stringify(patch));
@@ -202,6 +237,28 @@ function scopeFor(fp) {
     assert.equal(evaluateFingerprintDelivery({}, fp, { ...live, uaDataError: 'timeout' }, { strict: true }).ok, false);
     assert.equal(evaluateFingerprintDelivery({}, fp, { ...live, uaDataPresent: false }, { strict: true }).ok, false);
     assert.equal(evaluateFingerprintDelivery({}, fp, { ...live, uaDataHighEntropy: null }, { strict: true }).ok, false);
+  });
+  await test('Android platform verification accepts its Linux armv8l token and rejects the desktop token', () => {
+    const fp = buildFingerprint(profile({ os: 'Android', fingerprintVersion: 3 }));
+    const live = { userAgent: fp.userAgent, platform: 'Linux armv8l' };
+    const check = snapshot => evaluateFingerprintDelivery({}, fp, snapshot, { strict: true }).mismatches;
+    assert.ok(!check(live).some(issue => issue.field === 'platform'));
+    assert.ok(check({ ...live, platform: 'Linux x86_64' }).some(issue => issue.field === 'platform'));
+    assert.ok(check({ ...live, userAgent: buildUaProfile({ os: 'linux' }).userAgent })
+      .some(issue => issue.field === 'userAgent.platform'));
+  });
+  await test('strict delivery verifies that iOS personas lack Chromium-only navigator APIs', () => {
+    const fp = buildFingerprint(profile({ os: 'iOS' }));
+    const live = {
+      userAgent: fp.userAgent, platform: fp.platform, languages: fp.languages, vendor: fp.vendor,
+      hardwareConcurrency: fp.hardwareConcurrency, screenWidth: fp.screen.width, screenHeight: fp.screen.height,
+      devicePixelRatio: fp.screen.devicePixelRatio, secureContext: true,
+      connection: null, uaDataPresent: false, deviceMemoryPresent: false,
+    };
+    assert.equal(evaluateFingerprintDelivery({}, fp, live, { strict: true }).ok, true);
+    const exposed = { ...live, connection: {}, uaDataPresent: true, deviceMemoryPresent: true };
+    assert.deepEqual(evaluateFingerprintDelivery({}, fp, exposed, { strict: true }).mismatches.map(item => item.field),
+      ['connection', 'deviceMemory', 'userAgentData']);
   });
   console.log(`fingerprint-identity-selftest: OK ${count}/${count}`);
 })().catch((error) => { console.error(error); process.exitCode = 1; });

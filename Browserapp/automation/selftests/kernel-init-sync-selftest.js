@@ -51,6 +51,8 @@ async function main() {
       speech: 'noise',
       deviceNameMode: 'custom',
       deviceName: 'OB-Test-Host-01',
+      macMode: 'custom',
+      mac: '02:00:00:01:02:03',
       fontFingerprinting: true,
       geoMode: 'ip',
       accuracy: 50,
@@ -66,12 +68,12 @@ async function main() {
   assert.ok(String(fields.accept_languages).includes('ja'));
   assert.strictEqual(fields.hardwareConcurrency, 8);
   // navigator.deviceMemory is spec-quantised to {0.25,0.5,1,2,4,8}; 16 GB hardware reports 8.
-  assert.ok(Number(fields.deviceMemory) >= 1 && Number(fields.deviceMemory) <= 8,
-    'deviceMemory must stay within the measurable spec range');
+  assert.strictEqual(fields.deviceMemory, 8);
   assert.strictEqual(fields.webrtc_policy, 3);
   assert.strictEqual(fields.is_canvas_finger_printing_enable, true);
   assert.strictEqual(fields.is_webgl_finger_printing_enable, true);
   assert.strictEqual(fields.machine, 'OB-Test-Host-01');
+  assert.strictEqual(fields.mac_address, '02:00:00:01:02:03');
   assert.strictEqual(fields.webrtc_fake_ip, '203.0.113.44');
   assert.strictEqual(fields.webrtc_local_ip, fp.webrtcLocalIp);
   assert.strictEqual(fields.geoposition, '35.6762,139.6503,50');
@@ -99,6 +101,14 @@ async function main() {
 
   assert.ok(fields.user_agent_data.uaFullVersion);
   assert.ok(fields.user_agent_data.brands.length >= 2);
+  const mobileProfile = { ...profile, os: 'Android', userAgent: '' };
+  const mobileFp = buildFingerprint(mobileProfile);
+  const mobileMeta = mapFingerprintToInitFields(mobileFp, mobileProfile).user_agent_data;
+  assert.strictEqual(mobileMeta.platform, 'Android');
+  assert.strictEqual(mobileMeta.architecture, '');
+  assert.strictEqual(mobileMeta.bitness, '');
+  const unspecifiedPlatform = mapFingerprintToInitFields({ userAgentMetadata: { platform: 'Linux', platformVersion: '' } });
+  assert.strictEqual(unspecifiedPlatform.user_agent_data.platformVersion, '');
   assert.ok(fields._cmdLinePatch['user-agent'].includes('Windows NT'));
   assert.ok(fields.webgl_vendor || fields.webgl_renderer);
 
@@ -177,8 +187,7 @@ async function main() {
     const init = loadInitObject(await fsp.readFile(written.path));
     assert.strictEqual(init.platform, 'Win32');
     assert.strictEqual(init.hardwareConcurrency, 8);
-    assert.ok(Number(init.deviceMemory) >= 1 && Number(init.deviceMemory) <= 8,
-      'written init.deviceMemory must stay within the measurable spec range');
+    assert.strictEqual(init.deviceMemory, 8);
     assert.strictEqual(init.is_canvas_finger_printing_enable, true);
     assert.strictEqual(init.local_port.type, 0);
     assert.strictEqual(init.black_white_list.type, 1);
@@ -201,6 +210,7 @@ async function main() {
       'a bypass list without its feature switch would be a latent direct-connection path');
     assert.strictEqual(init.async_proxy_data, 0);
     assert.strictEqual(init.machine, 'OB-Test-Host-01');
+    assert.strictEqual(init.mac_address, '02:00:00:01:02:03');
     assert.strictEqual(init.webrtc_fake_ip, '203.0.113.44');
     assert.strictEqual(init.webrtc_local_ip, fp.webrtcLocalIp);
     assert.strictEqual(init.geoposition, '35.6762,139.6503,50');
@@ -229,6 +239,27 @@ async function main() {
       templatePath: fs.existsSync(template) ? template : null,
     });
     assert.strictEqual(written2.windowName, written.windowName);
+
+    const fractional = { ...profile, privacy: { ...profile.privacy, cores: 32, memory: 0.5 } };
+    const fractionalOptions = { fingerprint: buildFingerprint(fractional), profile: fractional };
+    const writtenFractional = await writeOpenBrowserKernelInit(tmp, fractionalOptions);
+    const fractionalInit = loadInitObject(await fsp.readFile(writtenFractional.path));
+    assert.strictEqual(fractionalInit.hardwareConcurrency, 32);
+    assert.strictEqual(fractionalInit.deviceMemory, 0.5);
+    await assert.rejects(writeOpenBrowserKernelInit(tmp, { ...fractionalOptions, async _beforeReadback(file) {
+      const altered = loadInitObject(await fsp.readFile(file));
+      altered.deviceMemory = 1;
+      await fsp.writeFile(file, encodeInitObject(altered), 'utf8');
+    } }), /readback verification failed: deviceMemory/);
+
+    const real = { ...profile, privacy: { ...profile.privacy, cores: 0, memory: 0,
+      deviceNameMode: 'real', macMode: 'real', webgl: 'real', webglMeta: 'real', webgpu: 'real' } };
+    const writtenReal = await writeOpenBrowserKernelInit(tmp, { fingerprint: buildFingerprint(real), profile: real });
+    const realInit = loadInitObject(await fsp.readFile(writtenReal.path));
+    for (const key of ['hardwareConcurrency', 'deviceMemory', 'machine', 'mac_address', 'webgl_vendor', 'webgl_renderer', 'webgpu_parameter']) {
+      assert.ok(!Object.hasOwn(realInit, key), `switching to real removes the previous override for ${key}`);
+    }
+    assert.strictEqual(writtenReal.windowName, written.windowName);
 
     const denied = { ...profile, privacy: { ...profile.privacy, geoPermission: 'deny' } };
     const deniedOptions = { fingerprint: buildFingerprint(denied), profile: denied };

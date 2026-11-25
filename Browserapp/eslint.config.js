@@ -190,7 +190,6 @@ module.exports = [
         editingProfileId: 'writable',
         editorCheck: 'writable',
         editorCookies: 'writable',
-        editorOsToUaKey: 'writable',
         editorResolution: 'writable',
         editorSelectedNetwork: 'writable',
         fillGroupSelect: 'writable',

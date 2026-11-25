@@ -1,5 +1,6 @@
 'use strict';
 /* global selectedSessions, refreshExtensions, openAssign, applyAssignment, extensions, refreshIcons, renderProfiles, switchListTab, switchView, startProfile, save, filteredProfilesForCurrentView, rebuildGroupCounts, refreshProxies, renderProxies, applyBuiltUa */
+/* global showProfileEditor, editorDraft */
 
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
@@ -7,6 +8,7 @@ const path = require('node:path');
 const os = require('node:os');
 const http = require('node:http');
 const cdp = require('../../cdp');
+const { CURRENT_FINGERPRINT_VERSION } = require('../../shared/profile-values');
 const { chooseChromiumBinary, Unavailable } = require('./native-gate-harness');
 const { closeFixtureServer, listenFixtureServer, startFixtureProcess } = require('./fixtures/browser-test-resources');
 const appRoot = path.resolve(__dirname, '../..');
@@ -351,7 +353,7 @@ async function main() {
       window.openWorkbenchEditorMode('single');
       return {password:document.getElementById('editor-platform-pass').value,seed:form.dataset.fingerprintSeed||'',version:form.dataset.fingerprintVersion};
     });
-    assert.deepEqual(fresh,{password:'',seed:'',version:'2'});
+    assert.deepEqual(fresh,{password:'',seed:'',version:String(CURRENT_FINGERPRINT_VERSION)});
     const extensionRefresh = await evaluate(async () => {
       window.__maxExtensionReads=0;window.__blockExtensionRead=true;const first=refreshExtensions();
       for(let i=0;i<100&&!window.__releaseExtensionRead;i++)await new Promise(r=>setTimeout(r,10));
@@ -606,6 +608,26 @@ async function main() {
     });
     assert.deepEqual(rpaRaces, { dirtyPreserved: true, latestSelection: true, saveDoesNotSwitch: true, selectionRetained: true,
       serialized: true, localFilters: true, failureRetains: true, storeLatest: true, storeFailureRetains: true }, 'RPA progress, selection, filters and late replies preserve current user state');
+    const deviceEdit = await evaluate(() => {
+      showProfileEditor({ id: 'legacy-device-fixture', engine: 'chromium', proxy: 'Direct', privacy: {
+        geoMode: 'disabled', geoFromIp: false, latitude: 0, longitude: 0,
+        fingerprint: { webrtc: 'real', deviceNameMode: 'custom', deviceName: 'OLD-NAME',
+          macMode: 'custom', mac: '02:00:00:00:00:12', hardwareConcurrency: 12, deviceMemory: 4 },
+      } });
+      const field = name => document.getElementById('editor-' + name);
+      const before = ['webrtc', 'device-name', 'mac', 'cores', 'memory', 'geo-mode'].map(name => field(name).value);
+      const processorOptions = Array.from(field('cores').options, option => option.value).slice(2);
+      for (const [name, value] of [['webrtc', 'disabled'], ['device-name', 'NEW-NAME'], ['mac', '02:00:00:00:00:32'],
+        ['cores', '32'], ['memory', '0.5'], ['geo-permission', 'allow']]) field(name).value = value;
+      return { before, processorOptions, privacy: editorDraft(false).privacy };
+    });
+    assert.deepEqual(deviceEdit.before, ['real', 'OLD-NAME', '02:00:00:00:00:12', '12', '4', 'custom']);
+    assert.deepEqual(deviceEdit.processorOptions, Array.from({ length: 64 }, (_, index) => String(index + 1)));
+    const { privacy } = deviceEdit;
+    assert.deepEqual([privacy.webrtc, privacy.deviceName, privacy.mac, privacy.cores, privacy.memory],
+      ['disabled', 'NEW-NAME', '02:00:00:00:00:32', 32, 0.5]);
+    assert.deepEqual([privacy.geoMode, privacy.geoPermission, privacy.latitude, privacy.longitude], ['custom', 'allow', '0', '0']);
+    for (const key of ['webrtc', 'deviceName', 'mac', 'hardwareConcurrency', 'deviceMemory']) assert.equal(privacy.fingerprint[key], undefined);
     assert.deepEqual(await evaluate(()=>window.__uiAuditErrors),[]);
   } catch (error) {
     failure = error;

@@ -121,6 +121,7 @@ async function fixture(t, { sqlite, count = 2 }) {
     return pageSource.slice(declaration.start, declaration.end);
   }).join("\n");
   const preload = await read("preload.js");
+  const { isProjectListChange } = await import("./workbench-table.mjs");
   const packs = Object.fromEntries(await Promise.all(["en", "ru", "zh-CN"].map(async key =>
     [key, (await import(`../frontend/src/workbench/locales/${key}.mjs`)).default])));
   const client = (locale = "en") => {
@@ -148,7 +149,8 @@ async function fixture(t, { sqlite, count = 2 }) {
     } });
     const tr = (key, values = {}) => (packs[locale][key] || key).replace(/\{(\w+)\}/g, (_, name) => values[name]);
     const context = vm.createContext({ rebuild: bridge.rebuild, createProfileLifecycleBridge: () => ({ handle: noop }),
-      $t: tr, currentScope: () => null, invalidateProfileTableCache: noop, __localSubscriptions: subscriptions });
+      $t: tr, currentScope: () => null, invalidateProfileTableCache: noop, invalidateProjectListCache: noop,
+      isProjectListChange, __localSubscriptions: subscriptions });
     vm.runInContext(bridgeSource, context);
     const Button = { name: "Button" }, Alert = { name: "Alert" };
     const definition = Function("globalThis", "ref", "onMounted", "onBeforeUnmount", "h", "Button", "Alert",

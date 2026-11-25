@@ -36,32 +36,34 @@ function resolvePersonaScreen({ profile, privacy, fpIn, mobileDevice, devicePers
   // which is what makes "screen smaller than the viewport" style inconsistencies show up.
   // Phones report the full display, and their floor is far below the desktop minimum the window
   // sync assumes, so the panel comes from the persona without the desktop clamp.
-  // privacy.resolutionMode === 'real' (跟随系统) opts out of the drawn panel: the engine passes
-  // the host's real display bounds via profile.hostScreen and every screen field follows them.
+  // Following the system keeps saved custom bounds inactive. Desktop can
+  // use the host display; mobile and headless runs use the selected panel.
+  const followsSystem = privacy.resolutionMode === 'real';
+  const overrides = followsSystem ? {} : fpIn;
   const mobileScreen = mobileDevice ? mobileDevice.screen : null;
   const hostScreen = (profile.hostScreen && Number(profile.hostScreen.width) >= 640 && Number(profile.hostScreen.height) >= 480)
     ? { width: Math.round(Number(profile.hostScreen.width)), height: Math.round(Number(profile.hostScreen.height)) }
     : null;
-  const followHostScreen = String(privacy.resolutionMode || '') === 'real' && !mobileScreen && Boolean(hostScreen);
+  const followHostScreen = followsSystem && !mobileScreen && Boolean(hostScreen);
   const screenWidth = followHostScreen
     ? hostScreen.width
     : mobileScreen
-      ? Math.round(Number(fpIn.screenWidth) || mobileScreen.width)
-      : Math.max(640, Math.round(Number(fpIn.screenWidth) || devicePersona?.screen?.width || width));
+      ? Math.round(Number(overrides.screenWidth) || mobileScreen.width)
+      : Math.max(640, Math.round(Number(overrides.screenWidth) || devicePersona?.screen?.width || width));
   const screenHeight = followHostScreen
     ? hostScreen.height
     : mobileScreen
-      ? Math.round(Number(fpIn.screenHeight) || mobileScreen.height)
-      : Math.max(480, Math.round(Number(fpIn.screenHeight) || devicePersona?.screen?.height || height));
+      ? Math.round(Number(overrides.screenHeight) || mobileScreen.height)
+      : Math.max(480, Math.round(Number(overrides.screenHeight) || devicePersona?.screen?.height || height));
   const taskbarHeight = mobileScreen
     ? 0
-    : Math.max(0, Math.round(Number(fpIn.taskbarHeight) || devicePersona?.screen?.taskbarHeight || (uaOs === 'macos' || uaOs === 'macos_arm' ? 25 : 40)));
-  const availLeft = Math.round(Number(fpIn.availLeft) || 0);
-  const availTop = Math.round(Number(fpIn.availTop) || 0);
-  const availWidth = Math.min(screenWidth, Math.max(1, Math.round(Number(fpIn.availWidth) || screenWidth)));
-  const availHeight = Math.min(screenHeight, Math.max(1, Math.round(Number(fpIn.availHeight) || (screenHeight - taskbarHeight))));
-  const screenX = Math.max(availLeft, Math.round(Number(fpIn.screenX) || availLeft));
-  const screenY = Math.max(availTop, Math.round(Number(fpIn.screenY) || availTop));
+    : Math.max(0, Math.round(Number(overrides.taskbarHeight) || devicePersona?.screen?.taskbarHeight || (uaOs === 'macos' || uaOs === 'macos_arm' ? 25 : 40)));
+  const availLeft = Math.round(Number(overrides.availLeft) || 0);
+  const availTop = Math.round(Number(overrides.availTop) || 0);
+  const availWidth = Math.min(screenWidth, Math.max(1, Math.round(Number(overrides.availWidth) || screenWidth)));
+  const availHeight = Math.min(screenHeight, Math.max(1, Math.round(Number(overrides.availHeight) || (screenHeight - taskbarHeight))));
+  const screenX = Math.max(availLeft, Math.round(Number(overrides.screenX) || availLeft));
+  const screenY = Math.max(availTop, Math.round(Number(overrides.screenY) || availTop));
 
   return { screenWidth, screenHeight, availWidth, availHeight, availLeft, availTop, screenX, screenY };
 }

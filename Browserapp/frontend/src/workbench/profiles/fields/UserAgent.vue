@@ -48,7 +48,7 @@ async function shuffle() {
         </IconField>
       </div>
       <Button severity="secondary" variant="outlined" icon="base/rx_ic_shuffle" :label="$t('随机')" class="shrink-0"
-        :disabled="fixedByKernel" :title="fixedByKernel ? input.randomHelp : undefined" @click="shuffle" />
+        :disabled="fixedByKernel" :title="fixedByKernel ? input.randomHelp : input.refreshHelp" @click="shuffle" />
     </div>
   </div>
 </template>

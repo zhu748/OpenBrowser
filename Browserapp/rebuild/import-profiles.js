@@ -37,6 +37,7 @@ function importRows(payload) {
         ...row,
         windowName: name,
         coreType,
+        osVersion: row.osVersion || (row.os.toLowerCase() === String(payload.os || '').toLowerCase() ? payload.osVersion : '') || '',
         proxyCategory: "noproxy",
       };
       value.useLatestCore = !row.coreVersion;

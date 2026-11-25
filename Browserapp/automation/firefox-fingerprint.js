@@ -23,6 +23,16 @@ function buildFirefoxFingerprint(profile, version) {
   if (pinned && (!/Firefox\//i.test(pinned) || /Chrome\//i.test(pinned))) {
     throw new Error('Firefox 环境需要 Firefox/Gecko UA；清空 UA 可按实际内核自动生成');
   }
+  if (pinned) {
+    const major = Number(String(version || '').match(/^\d+/)?.[0]);
+    const productMajor = Number(pinned.match(/\bFirefox\/(\d+)(?:\.\d+)*(?=\s|$)/i)?.[1]);
+    const geckoMajor = Number(pinned.match(/\brv:(\d+)(?:\.\d+)*(?=[;\s)])/i)?.[1]);
+    if (!productMajor || !geckoMajor || productMajor !== geckoMajor || (major && productMajor !== major)) {
+      throw Object.assign(new Error('自定义 Firefox UA 的 Firefox/ 和 rv: 主版本必须与实际内核一致；请重新生成或清空自定义 UA'), {
+        code: 'FINGERPRINT_CONFIG_INVALID',
+      });
+    }
+  }
   const fp = buildFingerprint({
     ...profile, osVersion: '', kernelVersion: version,
     userAgent: pinned || firefoxUserAgent(os, version, { shortVersion: profile.privacy?.fingerprint?.uaReduced === true,
@@ -45,7 +55,8 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
   const { position, permission } = resolveFingerprintGeolocation(fingerprint, profile);
   const reportWarning = (message) => { if (!warnings.includes(message)) warnings.push(message); };
   await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
-  if (options.installLocalWorkerFilter) await options.installLocalWorkerFilter();
+  const installWorkerFilter = options.installWorkerFilter || options.installLocalWorkerFilter;
+  if (installWorkerFilter) await installWorkerFilter();
   // Apply native emulation to explicit top-level contexts, so the tree has to
   // be resolved BEFORE the emulation phase. The preload registration is order-independent:
   // it applies to every future document in every context, including tabs opened later.
@@ -74,6 +85,20 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     if (fingerprint.timezone) {
       try { await scoped('emulation.setTimezoneOverride', { timezone: fingerprint.timezone }); }
       catch (error) { reportWarning(`emulation.setTimezoneOverride(${label}): ${error.message}`); }
+    }
+    if (fingerprint.screen) {
+      const { width, height, devicePixelRatio } = fingerprint.screen;
+      const applyDisplay = async (method, params) => {
+        try { await connection.command(method, params); }
+        catch (error) {
+          if (!['unknown command', 'unsupported operation'].includes(error.code)) throw error;
+          reportWarning(`Firefox 内核不支持原生屏幕覆盖 (${method})，CSS 媒体查询可能与页面指纹不同`);
+        }
+      };
+      await applyDisplay('emulation.setScreenSettingsOverride', { contexts: contextIds, screenArea: { width, height } });
+      for (const context of contextIds) {
+        await applyDisplay('browsingContext.setViewport', { context, devicePixelRatio });
+      }
     }
     // No emulation.setLocaleOverride: on Firefox 160 the BiDi locale override rewrites the
     // Accept-Language HTTP header to the bare single locale ("de-DE"), destroying the
@@ -117,7 +142,12 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     if (contextReady) await contextReady;
     if (event.method === 'script.realmCreated' && /worker$/.test(realm?.type || '')) {
       try { await evaluateBidi(conn, { realm: realm.realm }, workerSource); }
-      catch (error) { options.onWorkerError?.(error); }
+      catch (error) {
+        // A Worker can finish before this asynchronous fallback reaches its realm.
+        const missingRealm = error.code === 'no such realm'
+          || (error.code === 'no such frame' && error.message === `Realm with id ${realm.realm} not found`);
+        if (!missingRealm) options.onWorkerError?.(error);
+      }
     }
   };
   await connection.command('session.subscribe', { events: ['script.realmCreated', 'browsingContext.contextCreated', 'browsingContext.contextDestroyed'] });
@@ -144,13 +174,16 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     capabilities: {
       engine: 'firefox', cdp: false, bidi: true, fingerprintDelivery: true,
       fingerprintVerification: true, runtimeInjection: true, documentStartInjection: true,
-      workerFingerprintDelivery: options.workerProxyReady === true ? 'prefs-fields-plus-proxy' : 'prefs-fields',
-      localWorkerResponseFilter: Boolean(options.installLocalWorkerFilter),
+      externalHttpsTransport: options.workerProxyReady === true ? 'forwarder-tls-http1.1' : 'native',
+      workerFingerprintDelivery: options.installWorkerFilter ? 'browser-response-filter'
+        : (options.workerProxyReady === true ? 'prefs-fields-plus-proxy' : 'prefs-fields'),
+      localWorkerResponseFilter: Boolean(installWorkerFilter),
       workerInjection: [
         'Firefox prefs apply UA/platform/languages/timezone and cap the native CPU count.',
+        options.installWorkerFilter && 'The in-browser response filter delivers Worker scripts over native HTTP(S), including through a CONNECT proxy.',
         options.workerProxyReady && 'The trusted forwarder delivers the configured Worker identity to external HTTP(S) scripts.',
         options.installLocalWorkerFilter && 'The local response filter covers HTTP(S) Worker scripts on localhost, 127.0.0.1 and ::1 before execution.',
-        (options.workerProxyReady || options.installLocalWorkerFilter)
+        (options.workerProxyReady || installWorkerFilter)
           ? 'Startup invalidates incompatible persisted Service Worker registrations and retains origin storage. Restrictive CSP and unrelated cross-origin module graphs remain outside the verified matrix.'
           : 'Asynchronous realm injection cannot guarantee JS-only fields on the first Worker instruction.',
       ].filter(Boolean).join(' '),

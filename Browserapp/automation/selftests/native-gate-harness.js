@@ -76,6 +76,7 @@ function buildPersona(id, spec = {}) {
     id, name: id,
     os: spec.os || 'Windows',
     fingerprintSeed: spec.seed || id,
+    fingerprintVersion: spec.fingerprintVersion,
     privacy: {
       deviceProfile: 'persona',
       fontListMode: spec.fontListMode || 'real',

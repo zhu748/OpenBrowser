@@ -19,7 +19,7 @@ const { firefoxExtraUserPrefs } = require('../../engine/start-firefox');
 const { buildFirefoxUserJs, firefoxStartupArgs } = require('../kernel-versions');
 const { buildFirefoxFingerprint, initializeFirefoxFingerprint } = require('../firefox-fingerprint');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
-const https = require('node:https');
+const http2 = require('node:http2');
 const net = require('node:net');
 const { buildWorkerInjectionScript } = require('../fingerprint');
 const { FirefoxWorkerMitmProxy } = require('../firefox-worker-mitm-proxy');
@@ -27,7 +27,7 @@ const { installFirefoxCa } = require('../firefox-trust-installer');
 const { receiverShadowSnapshot } = require('./fingerprint-receiver-probes');
 const { matrixSources, probeFirefoxWorkerMatrix, probeCachedFirefoxServiceWorker } = require('./firefox-worker-matrix-probes');
 const { prepareFirefoxWorkerCache } = require('../firefox-worker-cache');
-const { installFirefoxLocalWorkerFilter, LOOPBACK_HOSTS } = require('../firefox-local-workers');
+const { installFirefoxWorkerFilter, LOOPBACK_HOSTS } = require('../firefox-local-workers');
 
 async function closeFirefox(connection, child) {
   await connection.command('browser.close', {}, 5000).catch(() => {});
@@ -202,7 +202,7 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
       localConnection = new BidiConnection(await waitForFirefoxEndpoint(localChild, 30000), {});
       await localConnection.open();
       const local = await initializeFirefoxFingerprint(localConnection, directFp, directProfile, {
-        installLocalWorkerFilter: () => installFirefoxLocalWorkerFilter(localConnection, root, directSource),
+        installLocalWorkerFilter: () => installFirefoxWorkerFilter(localConnection, root, directSource),
       });
       await navigate(localConnection, local.context, 'http://127.0.0.1:' + server.address().port + '/');
       const oldService = await evaluateBidi(localConnection, { context: local.context }, `(${probeCachedFirefoxServiceWorker.toString()})()`);
@@ -252,10 +252,15 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
       '-days', '2', '-nodes', '-subj', '/CN=127.0.0.1',
       '-addext', 'subjectAltName=IP:127.0.0.1,DNS:localhost'], { stdio: ['ignore', 'ignore', 'ignore'], timeout: 15000 });
     const httpsWorkerBody = '#!network-worker\n' + dedicatedSrc;
-    const httpsServer = https.createServer({
+    const originTransports = [];
+    const httpsServer = http2.createSecureServer({
       key: await fs.readFile(keyPath),
       cert: await fs.readFile(certPath),
+      allowHTTP1: true,
     }, (req, res) => {
+      if (req.url === '/worker.js') {
+        originTransports.push({ http: req.httpVersion, alpn: req.socket.alpnProtocol, tls: req.socket.getProtocol() });
+      }
       if (req.url === '/matrix/service.js') res.setHeader('Service-Worker-Allowed', '/');
       if (matrixScripts[req.url]) { res.setHeader('Content-Type', 'application/javascript');res.end(matrixScripts[req.url]); }
       else if (req.url === '/') { res.setHeader('Content-Type', 'text/html');res.end('<!doctype html><body>Worker matrix</body>'); }
@@ -335,6 +340,8 @@ const evaluateMatrix = (connection, context) => evaluateBidi({
       assert.equal(mitmProbe.tz, fp.timezone, 'MITM worker timezone');
       assert.equal(mitmProbe.cores, fp.hardwareConcurrency,
         'MITM worker hardwareConcurrency must be the persona value (this is the JS-only field the proxy delivers)');
+      assert.deepEqual(originTransports[0], { http: '1.1', alpn: 'http/1.1', tls: 'TLSv1.3' },
+        'the HTTPS origin can negotiate h2 but receives TLS and HTTP from the Worker forwarder');
       console.log('PASS ff-worker dedicated first read over HTTPS via MITM proxy: JS-only fields (hardwareConcurrency) are persona');
       await evaluateBidi(conn2, { context: ctx2.context }, `(async()=>{
         document.cookie='worker_keep=retained;Max-Age=3600;SameSite=Lax;Secure';localStorage.setItem('worker_keep','retained');

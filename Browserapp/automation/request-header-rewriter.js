@@ -13,6 +13,7 @@
 const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader } = require('./user-agent');
 const { compileUrlAccessPolicy, blockedPageHtml } = require('./url-access-policy');
 const { NETWORK_INFO_FIELDS } = require('./fingerprint/delivery-probe');
+const OPTIONAL_NETWORK_INFO_FIELDS = new Set(['type', 'downlinkMax']);
 const { normalizeNetworkInformation } = require('../shared/profile-values');
 
 const CHROMIUM_CANONICAL_HEADER_ORDER = Object.freeze([
@@ -505,9 +506,14 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
     ? fingerprint.os || fingerprint.uaProfile?.os || profile?.os
     : profile?.os || fingerprint.uaProfile?.os) || '';
   const expectedFamily = normalizePlatformFamily(expectedOs) || normalizePlatformFamily(expectedPlatform);
+  const ios = expectedFamily === 'ios';
 
   if (expectedFamily && liveProbe.platform) {
-    const liveFamily = normalizePlatformFamily(liveProbe.platform);
+    // Android Chromium uses a Linux-style Navigator platform. The exact
+    // platform value is checked here and the Android UA and hints below.
+    const androidPlatform = expectedFamily === 'android' && expectedPlatform === 'Linux armv8l'
+      && liveProbe.platform === expectedPlatform;
+    const liveFamily = androidPlatform ? 'android' : normalizePlatformFamily(liveProbe.platform);
     if (liveFamily && liveFamily !== expectedFamily) {
       mismatches.push({
         field: 'platform',
@@ -712,7 +718,7 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   const explicitMemory = (rawMemory !== '' && rawMemory !== null && rawMemory !== undefined) ? Number(rawMemory) : NaN;
   // Initial opaque about:blank documents can legitimately lack secure-context APIs.
   const memoryGatedOff = liveProbe.deviceMemoryPresent === false && liveProbe.secureContext === false;
-  if (Number.isFinite(explicitMemory) && explicitMemory > 0 && !memoryGatedOff) {
+  if (Number.isFinite(explicitMemory) && explicitMemory > 0 && !memoryGatedOff && !(options.strict && ios)) {
     const liveMemory = Number(liveProbe.deviceMemory);
     if ((options.strict && !Number.isFinite(liveMemory)) || (Number.isFinite(liveMemory) && liveMemory !== Number(explicitMemory))) {
       mismatches.push({
@@ -725,12 +731,24 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   }
 
   if (options.strict) {
-    if (fingerprint.connection && liveProbe.connection) {
+    if (liveProbe.webdriver === true) {
+      mismatches.push({ field: 'webdriver', expected: false, actual: true, message: 'navigator.webdriver 未按配置交付' });
+    }
+    if (ios) {
+      for (const [field, present] of [['connection', Boolean(liveProbe.connection)],
+        ['deviceMemory', liveProbe.deviceMemoryPresent], ['userAgentData', liveProbe.uaDataPresent]]) {
+        if (present === true) {
+          mismatches.push({ field, expected: false, actual: true, message: `iOS 页面意外暴露 ${field}` });
+        }
+      }
+    } else if (fingerprint.connection && Object.hasOwn(liveProbe, 'connection') && !liveProbe.connection) {
+      mismatches.push({ field: 'connection', expected: 'present', actual: null, message: '当前页面缺少待校验的 navigator.connection' });
+    } else if (fingerprint.connection && liveProbe.connection) {
       const connection = normalizeNetworkInformation(fingerprint.connection);
       for (const key of NETWORK_INFO_FIELDS) {
         // Keep the native API shape: some platforms omit individual members.
         if (!Object.hasOwn(connection, key)
-          || !Object.hasOwn(liveProbe.connection, key)) continue;
+          || (OPTIONAL_NETWORK_INFO_FIELDS.has(key) && !Object.hasOwn(liveProbe.connection, key))) continue;
         const expected = connection[key], actual = liveProbe.connection[key];
         if (expected !== actual) mismatches.push({ field: 'connection.' + key, expected, actual,
           message: `navigator.connection.${key} 未按配置交付` });

@@ -137,6 +137,15 @@ function normalizeUaOs(value) {
   return OS_PRESETS[os] ? os : '';
 }
 
+function normalizeSelectedOsVersion(value) {
+  const version = String(value || '').trim();
+  return /^all$/i.test(version) ? '' : version.replace(/^(?:Windows|macOS|Android|iOS)\s+(?=\d)/i, '');
+}
+
+function desktopUaOsForRelease(os, release) {
+  return os === 'macos' && /^27(?:\.|$)/.test(release) ? 'macos_arm' : os;
+}
+
 function parseOsFromUa(ua = "") {
   const s = String(ua);
   if (/Windows NT/i.test(s)) return "windows";
@@ -194,16 +203,23 @@ const OS_CHROME_SUPPORT_FLOORS = Object.freeze([
   { os: 'macos', maxOsVersion: '10.15', maxChromeMajor: 138 },
   { os: 'macos_arm', maxOsVersion: '10.15', maxChromeMajor: 138 },
 ]);
-function osChromeSupportViolation(preset, osVersion, chromeMajor) {
-  const raw = String(osVersion || '').trim().toLowerCase();
+const CURRENT_CHROME_SUPPORT_FLOORS = Object.freeze({
+  macos: { '10.15': 128, '11': 138, '12': 150 },
+  macos_arm: { '10.15': 128, '11': 138, '12': 150 },
+  android: { '8': 138, '8.1': 138, '9': 138 },
+});
+function osChromeSupportViolation(preset, osVersion, chromeMajor, fingerprintVersion) {
+  const raw = (fingerprintVersion >= 3 ? normalizeSelectedOsVersion(osVersion) : String(osVersion || '').trim()).toLowerCase();
   const parts = raw.match(/^(\d+)(?:\.(\d+))?(?:\.\d+)*$/);
   const v = parts ? String(Number(parts[1])) + (Number(parts[2]) ? '.' + Number(parts[2]) : '') : raw;
   const major = Number(chromeMajor) || 0;
   if (!v || !preset || !major) return null;
   const osId = String(preset.id || '').toLowerCase();
-  const hit = OS_CHROME_SUPPORT_FLOORS.find((row) => row.os === osId && row.maxOsVersion === v);
-  if (!hit || major <= hit.maxChromeMajor) return null;
-  return { osId, osVersion: v, maxChromeMajor: hit.maxChromeMajor };
+  const legacyLimit = OS_CHROME_SUPPORT_FLOORS.find((row) => row.os === osId && row.maxOsVersion === v)?.maxChromeMajor;
+  const familyLimits = fingerprintVersion >= 3 ? CURRENT_CHROME_SUPPORT_FLOORS[osId] : undefined;
+  const maxChromeMajor = familyLimits?.[v] ?? familyLimits?.[parts?.[1]] ?? legacyLimit;
+  if (!maxChromeMajor || major <= maxChromeMajor) return null;
+  return { osId, osVersion: v, maxChromeMajor };
 }
 
 function osVersionUaAdjustments(preset, osVersion) {
@@ -284,10 +300,9 @@ function buildUserAgentMetadata(ua, overrides = {}) {
 
   const platform = clientHintPlatform(preset, overrides);
   const osAdj = osVersionUaAdjustments(preset, overrides.osVersion);
-  let platformVersion = overrides.platform_version
-    || overrides.platformVersion
-    || osAdj?.chPlatformVersion
-    || preset.chPlatformVersion;
+  const suppliedPlatformVersion = overrides.platform_version ?? overrides.platformVersion;
+  let platformVersion = suppliedPlatformVersion === '' && osKey === 'linux' ? ''
+    : suppliedPlatformVersion || osAdj?.chPlatformVersion || preset.chPlatformVersion;
   let model = overrides.model != null ? String(overrides.model) : (preset.model || "");
 
   if (osKey === "android" && ua) {
@@ -411,6 +426,19 @@ function buildUaProfile(options = {}) {
   };
 }
 
+function withChromeUaVersion(ua, version) {
+  const updated = buildUaProfile({
+    ...ua.clientHints,
+    os: ua.os,
+    platformNav: ua.platform,
+    vendor: ua.vendor,
+    userAgent: ua.userAgent.replace(/(Chrome|Chromium|CriOS)\/[\d.]+/i, (_, brand) => `${brand}/${version}`),
+    ua_full_version: version,
+  });
+  if (ua.clientHints.deviceModel) updated.clientHints.deviceModel = ua.clientHints.deviceModel;
+  return updated;
+}
+
 /**
  * TLS extension permutation flags based on Chrome major from UA.
  */
@@ -518,7 +546,9 @@ function randomUaForSeed(seedU32, options = {}) {
   const knownFull = String(options.fullVersion || OPENBROWSER_KERNEL_VERSION);
   const full = Number(knownFull.split('.')[0]) === Number(major) ? knownFull : `${major}.0.0.0`;
   if (os === 'android' || os === 'ios') {
-    return require('./mobile-personas').mobilePersona(seed, os, { chromeMajor: major, chromeFull: full }).uaProfile;
+    return require('./mobile-personas').mobilePersona(seed, os, {
+      chromeMajor: major, chromeFull: full, fingerprintVersion: options.fingerprintVersion,
+    }).uaProfile;
   }
   return buildUaProfile({
     os,
@@ -535,10 +565,13 @@ module.exports = {
   OS_PRESETS,
   parseChromeVersion,
   normalizeUaOs,
+  normalizeSelectedOsVersion,
+  desktopUaOsForRelease,
   parseOsFromUa,
   buildUserAgentString,
   buildUserAgentMetadata,
   buildUaProfile,
+  withChromeUaVersion,
   chromeArgsForUa,
   formatAcceptLanguage,
   buildAcceptLanguageHeader,

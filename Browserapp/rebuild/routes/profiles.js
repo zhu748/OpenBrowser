@@ -6,6 +6,8 @@ const path = require("node:path");
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../../engine/profile-sanitizer");
 const { assertProfileId } = require("../../automation/isolation");
+const { buildFingerprint, assertFingerprintConsistency } = require("../../automation/fingerprint");
+const { buildFirefoxFingerprint } = require("../../automation/firefox-fingerprint");
 const { fromRoxy, toRoxy } = require("../profile-dto");
 const { buildProjectLookup, decorateProfile } = require("../profile-index");
 const { profileFromPreview, savePreviewProfiles } = require('../fingerprint-draft');
@@ -302,6 +304,57 @@ async function profilesPatch(service, p) {
   return true;
 }
 
+async function profilesUpgradeKernels(service, { groups } = {}) {
+  const engine = service.engine;
+  // The profile store commits up to 200 revision-checked commands atomically.
+  if (!Array.isArray(groups) || !groups.length || groups.length > 200)
+    throw Error("请选择要升级内核的窗口");
+  const targets = new Map();
+  for (const group of groups) {
+    const version = String(group?.version ?? '');
+    if (!/^\d+(?:\.\d+){0,3}(?:esr)?$/i.test(version) || !Array.isArray(group.ids) || !group.ids.length)
+      throw Error("无效的内核升级请求");
+    for (const id of group.ids) {
+      if (targets.size >= 200) throw Error("一次最多升级 200 个窗口");
+      if (typeof id !== 'string' || targets.has(id)) throw Error("内核升级的窗口列表无效");
+      targets.set(id, { version, ...engine.profileForEdit(id) });
+    }
+  }
+  const kernelVersions = new Map();
+  const commands = [];
+  for (const [id, target] of targets) {
+    const profile = { ...target.profile, engineVersion: target.version };
+    try {
+      const key = JSON.stringify([profile.engine, target.version]);
+      if (!kernelVersions.has(key)) {
+        const browser = engine.chooseBrowser(profile, profile.engine);
+        kernelVersions.set(key, engine.kernelManager?.readInstalledVersion
+          ? await engine.kernelManager.readInstalledVersion(browser) : browser.version);
+      }
+      const kernelVersion = kernelVersions.get(key);
+      const fp = profile.engine === 'firefox' ? buildFirefoxFingerprint(profile, kernelVersion)
+        : buildFingerprint({ ...profile, kernelVersion });
+      if (profile.engine !== 'firefox') assertFingerprintConsistency(fp);
+      const saved = profile.privacy?.fingerprint;
+      if (profile.userAgent && saved?.uaGenerated && !saved.userAgent) {
+        profile.userAgent = fp.userAgent;
+        if (saved.clientHints && fp.userAgentMetadata) {
+          profile.privacy = { ...profile.privacy, fingerprint: { ...saved, clientHints: {
+            ...saved.clientHints, ua_full_version: fp.userAgentMetadata.fullVersion,
+          } } };
+        }
+      }
+      commands.push({ kind: 'modify', id, baseRev: target.rev, profile });
+    } catch (error) {
+      throw Object.assign(new Error(`窗口「${profile.name}」无法升级内核：${error.message}`, { cause: error }), {
+        code: error.code || 'KERNEL_UPGRADE_FAILED',
+      });
+    }
+  }
+  await engine.commitActiveProfileCommands(commands);
+  return { updated: commands.length };
+}
+
 async function profilesStop(service, p) {
   const e = service.engine;
   const id = String(p.id);
@@ -468,6 +521,7 @@ module.exports = [
   ["profiles:start", profilesStart, "parallel"],
   ["profiles:clone", profilesClone, "serial"],
   ["profiles:patch", profilesPatch, "serial"],
+  ["profiles:upgrade-kernels", profilesUpgradeKernels, "serial"],
   ["profiles:stop", profilesStop, "parallel"],
   ["profiles:edit-data", profilesEditData, "serial"],
   ["profiles:delete", profilesDelete, "serial"],

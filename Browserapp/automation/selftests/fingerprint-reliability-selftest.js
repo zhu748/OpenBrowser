@@ -78,17 +78,35 @@ function documentScope() {
     $('#editor-battery-charging').value = 'no';
     $('#editor-battery-level').value = '0.5';
     $('#editor-media-label-audio').value = 'Fixed microphone';
-    const context = vm.createContext({ $, window: { crypto: crypto.webcrypto }, renderEditorSummary() {} });
+    const values = require('../../shared/profile-values');
+    const context = vm.createContext({ $, window: { crypto: crypto.webcrypto, OpenBrowserProfileValues: values }, renderEditorSummary() {} });
     vm.runInContext(body, context);
     vm.runInContext('randomizeFingerprintDraft()', context);
     const first = $('#profile-editor-form').dataset.fingerprintSeed;
     vm.runInContext('randomizeFingerprintDraft()', context);
     assert.match(first, /^[a-f0-9]{32}$/);
     assert.notEqual(first, $('#profile-editor-form').dataset.fingerprintSeed);
+    assert.equal($('#profile-editor-form').dataset.fingerprintVersion, String(values.CURRENT_FINGERPRINT_VERSION));
     assert.equal($('#editor-device-profile').value, 'persona');
     assert.equal($('#editor-battery-charging').value, 'auto');
     assert.equal($('#editor-battery-level').value, '');
     assert.equal($('#editor-media-label-audio').value, '');
+  });
+  await test('the classic MAC shuffle generates a six-octet local unicast address', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../../renderer.js'), 'utf8');
+    const start = source.indexOf("document.getElementById('editor-mac-shuffle')");
+    const end = source.indexOf("document.getElementById('editor-random-fp')", start);
+    let listener, mac;
+    const context = vm.createContext({
+      window: { OpenBrowserProfileValues: require('../../shared/profile-values') },
+      crypto: crypto.webcrypto,
+      document: { getElementById: () => ({ addEventListener: (_, handler) => { listener = handler; } }) },
+      editorSet: (selector, value) => { assert.equal(selector, '#editor-mac');mac = value; },
+      renderEditorSummary() {},
+    });
+    vm.runInContext(source.slice(start, end), context);
+    listener();
+    assert.match(mac, /^[0-9A-F][26AE](?::[0-9A-F]{2}){5}$/);
   });
   await test('real memory remains native after executing the complete injection', () => {
     const fp = buildFingerprint(profile({ privacy: { memory: 0, fontListMode: 'real' } }));
@@ -112,10 +130,12 @@ function documentScope() {
     const engine = { profiles: new Map(), chooseBrowser: () => ({ version: '149.0.7827.114' }) };
     const generated = buildEditorUa(engine, { random: true, os: 'windows' });
     const saved = buildFingerprint({ ...profile({ userAgent: generated.userAgent, privacy: { fingerprint: {
-      clientHints: generated.clientHints, uaGenerated: generated.kernelBound, uaPatchRandomized: generated.uaPatchRandomized,
+      clientHints: generated.clientHints, uaGenerated: generated.kernelBound, uaVersionRandomized: generated.uaVersionRandomized,
+      uaReduced: generated.uaReduced,
     } } }), kernelVersion: '149.0.7827.114' });
-    assert.match(generated.userAgent, /Chrome\/149\.0\.7827\.\d+ /);
-    assert.equal(generated.metadata.fullVersion, generated.userAgent.match(/Chrome\/([\d.]+)/)[1]);
+    assert.match(generated.userAgent, /Chrome\/149\.0\.[1-9]\d*\.\d+ /);
+    assert.ok(generated.userAgent.includes(`Chrome/${generated.metadata.fullVersion} `));
+    assert.equal(generated.uaPatchRandomized, false);
     assert.equal(saved.userAgent, generated.userAgent);
     assert.equal(saved.userAgentMetadata.fullVersion, generated.metadata.fullVersion);
     assert.equal(buildFingerprint({ ...profile(), kernelVersion: '150.0.1234.56' }).userAgentMetadata.fullVersion, '150.0.1234.56');
@@ -135,6 +155,28 @@ function documentScope() {
     };
     for (let i = 0; i < 2; i += 1) await assert.rejects(applyFingerprintToTab(failing, null, fp, profile(), { applyKey: 'reliability-execution' }), /execution rejected/);
     assert.equal(registrations, 1, 'retry must reuse the successful document-start registration');
+  });
+  await test('unknown document registration outcome blocks the target without registering twice', async () => {
+    const p = profile();
+    const fp = buildFingerprint(p);
+    for (const timeout of [true, false]) {
+      const calls = [];
+      const install = async (method) => {
+        calls.push(method);
+        if (method === 'Page.addScriptToEvaluateOnNewDocument') {
+          if (timeout) throw Error('CDP timeout: ' + method);
+          return {};
+        }
+        return {};
+      };
+      const options = { applyKey: 'unknown-registration' };
+      await assert.rejects(applyFingerprintToTab(install, null, fp, p, options), { code: 'FINGERPRINT_REGISTRATION_UNCONFIRMED' });
+      assert.equal(calls.filter(method => method === 'Page.addScriptToEvaluateOnNewDocument').length, 1);
+      assert.ok(!calls.includes('Runtime.evaluate'));
+      calls.length = 0;
+      await assert.rejects(applyFingerprintToTab(install, null, fp, p, options), { code: 'FINGERPRINT_REGISTRATION_UNCONFIRMED' });
+      assert.deepEqual(calls, []);
+    }
   });
   await test('missing coordinates stay unset while valid zero coordinates work', async () => {
     const run = async (p, key) => {

@@ -204,13 +204,16 @@ check('buildFirefoxUserJs: socks5 sets socks prefs + remote dns', () => {
   assert.ok(js.includes('user_pref("network.proxy.socks_port", 1080);'));
   assert.ok(js.includes('user_pref("network.proxy.socks_version", 5);'));
   assert.ok(js.includes('user_pref("network.proxy.socks_remote_dns", true);'));
-  assert.ok(!js.includes('network.proxy.http"'));
+  assert.ok(js.includes('user_pref("network.proxy.http", "");'));
 });
 
 check('buildFirefoxUserJs: direct mode = manual proxy with no hosts', () => {
   const js = kv.buildFirefoxUserJs({ proxyEndpoint: '' });
   assert.ok(js.includes('user_pref("network.proxy.type", 1);'));
-  assert.ok(!js.includes('network.proxy.http"'));
+  for (const key of ['http', 'ssl', 'socks']) {
+    assert.ok(js.includes(`user_pref("network.proxy.${key}", "");`));
+    assert.ok(js.includes(`user_pref("network.proxy.${key}_port", 0);`));
+  }
 });
 
 check('firefoxStartupArgs shape', () => {
