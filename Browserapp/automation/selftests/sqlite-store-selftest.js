@@ -16,6 +16,28 @@ const { registerProfileIpc } = require('../../main/profile-ipc');
 const { LocalService } = require('../../rebuild/local-service');
 const cloudSync = require('../cloud-sync');
 
+// Each boot models a restart. Windows also requires the last SQLite connection
+// (including its WAL mapping) to be closed before removing the fixture.
+async function withEngineFixture(prefix, run) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  let engine;
+  async function boot() {
+    engine?.sqliteStore?.close();
+    engine = new BrowserEngine({ getPath: () => root }, {
+      profileDataRoot: path.join(root, 'profiles-data'),
+      auditLogs: false,
+    });
+    await engine.init(null);
+    return engine;
+  }
+  try {
+    await run(boot, root);
+  } finally {
+    engine?.sqliteStore?.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
 async function checkLegacySyncPreservesUnreadableRows() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-sync-durable-id-'));
   const initialKey = process.env.OPENBROWSER_MASTER_KEY;
@@ -100,9 +122,7 @@ async function main() {
   // Test 1: Migration & Idempotence
   // ==========================================
   console.log('\n--- [Test 1] Migration & Idempotence ---');
-  const tempDir1 = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-migration-test-'));
-  try {
-    const mockApp = { getPath: () => tempDir1 };
+  await withEngineFixture('ob-migration-test-', async (boot, tempDir1) => {
     const legacyJsonPath = path.join(tempDir1, 'openbrowser-engine.json');
     const dbPath = path.join(tempDir1, 'openbrowser-data.db');
 
@@ -157,11 +177,7 @@ async function main() {
     fs.writeFileSync(legacyJsonPath, JSON.stringify(initialJson, null, 2), 'utf8');
 
     // 1.2 First engine boot: trigger automatic migration
-    const engine1 = new BrowserEngine(mockApp, {
-      profileDataRoot: path.join(tempDir1, 'profiles-data'),
-      auditLogs: false,
-    });
-    await engine1.init(null);
+    const engine1 = await boot();
 
     assert.equal(engine1.usingSqlite, true, 'Engine should activate SQLite store');
     assert.equal(engine1.profiles.size, 2, 'All 2 profiles must be migrated');
@@ -187,11 +203,7 @@ async function main() {
     assert.ok(fs.existsSync(dbPath), 'openbrowser-data.db must exist');
 
     // 1.3 Second engine boot: Idempotence test (no re-migration, loads directly from SQLite)
-    const engine2 = new BrowserEngine(mockApp, {
-      profileDataRoot: path.join(tempDir1, 'profiles-data'),
-      auditLogs: false,
-    });
-    await engine2.init(null);
+    const engine2 = await boot();
 
     assert.equal(engine2.usingSqlite, true);
     assert.equal(engine2.profiles.size, 2);
@@ -202,9 +214,7 @@ async function main() {
     console.log('  PASS  Automatic lossless migration from legacy JSON to SQLite');
     console.log('  PASS  Migration backup created and retained');
     console.log('  PASS  Subsequent boots are strictly idempotent');
-  } finally {
-    fs.rmSync(tempDir1, { recursive: true, force: true });
-  }
+  });
 
   // ==========================================
   // Test 2: Crash Simulation / Power Loss (kill -9)
@@ -235,19 +245,25 @@ async function main() {
     `;
 
     const child = cp.spawn(process.execPath, ['-e', workerScript], {
-      stdio: ['pipe', 'pipe', 'pipe'],
+      stdio: ['ignore', 'pipe', 'inherit'],
+      timeout: 30_000, killSignal: 'SIGKILL',
     });
-
-    await new Promise((resolve, reject) => {
-      child.stdout.on('data', (chunk) => {
-        if (chunk.toString().includes('COMMITTED')) resolve();
+    const closed = new Promise(resolve => child.once('close', resolve));
+    try {
+      await new Promise((resolve, reject) => {
+        let output = '';
+        child.stdout.setEncoding('utf8').on('data', chunk => {
+          output += chunk;
+          if (output.includes('COMMITTED\n')) resolve();
+        });
+        child.once('error', reject);
+        child.once('exit', (code, signal) => reject(Error(`WAL writer exited before commit: ${signal || code}`)));
       });
-      child.on('error', reject);
-    });
-
-    // Abruptly kill the worker with SIGKILL (kill -9)
-    child.kill('SIGKILL');
-    await new Promise((resolve) => child.on('exit', resolve));
+    } finally {
+      // Simulate power loss, then wait for process and stdio handles to close.
+      child.kill('SIGKILL');
+      await closed;
+    }
 
     const wal = fs.readFileSync(dbPath + '-wal'), shm = fs.readFileSync(dbPath + '-shm');
     assert.ok(wal.length > 0 && shm.length > 0);
@@ -323,14 +339,8 @@ async function main() {
   // Test 3: Issue #37 Recycle Bin Full Lifecycle
   // ==========================================
   console.log('\n--- [Test 3] Recycle Bin Lifecycle & #37 Semantics ---');
-  const tempDir3 = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-trash-lifecycle-'));
-  try {
-    const mockApp = { getPath: () => tempDir3 };
-    const engine = new BrowserEngine(mockApp, {
-      profileDataRoot: path.join(tempDir3, 'profiles-data'),
-      auditLogs: false,
-    });
-    await engine.init(null);
+  await withEngineFixture('ob-trash-lifecycle-', async (boot) => {
+    const engine = await boot();
     assert.equal(engine.usingSqlite, true);
 
     // Create 3 active profiles
@@ -428,8 +438,9 @@ async function main() {
     console.log('\n--- [Test 3.5] trash/restore must not make saveProfilesDiffed rewrite unchanged rows ---');
     {
       const tempDir35 = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-diff-hash-'));
+      let store35;
       try {
-        const store35 = new ProfileStoreSqlite({
+        store35 = new ProfileStoreSqlite({
           dbPath: path.join(tempDir35, 'data.db'),
           wal: true,
         });
@@ -478,15 +489,13 @@ async function main() {
         assert.equal(changed, 0, 'restoreProfiles synced the hash map: no rewrite');
         assert.equal(upserts, 0, 'no upsert after restore for synced rows');
 
-        store35.close();
         console.log('  PASS  trashProfiles/restoreProfiles keep _rowHashes in sync (no stale-hash rewrites)');
       } finally {
+        store35?.close();
         fs.rmSync(tempDir35, { recursive: true, force: true });
       }
     }
-  } finally {
-    fs.rmSync(tempDir3, { recursive: true, force: true });
-  }
+  });
 
   // ==========================================
   // Test 4: LocalStorage Quota Exceeded & Notification
@@ -608,14 +617,8 @@ async function main() {
   // Test 5: Cloud Export & JSON Parity
   // ==========================================
   console.log('\n--- [Test 5] Cloud Export & JSON Parity ---');
-  const tempDir5 = fs.mkdtempSync(path.join(os.tmpdir(), 'ob-export-parity-'));
-  try {
-    const mockApp = { getPath: () => tempDir5 };
-    const engine = new BrowserEngine(mockApp, {
-      profileDataRoot: path.join(tempDir5, 'profiles-data'),
-      auditLogs: false,
-    });
-    await engine.init(null);
+  await withEngineFixture('ob-export-parity-', async (boot) => {
+    const engine = await boot();
 
     engine.syncProfiles([
       { id: 'exp-1', number: 1, name: 'Export 1', cookies: 'token=123', proxy: 'socks5://127.0.0.1:1080' },
@@ -644,9 +647,7 @@ async function main() {
 
     console.log('  PASS  dumpToJson() and exportEngineState() match legacy JSON structure');
     console.log('  PASS  Exported state is 100% interoperable with cloud-sync.js');
-  } finally {
-    fs.rmSync(tempDir5, { recursive: true, force: true });
-  }
+  });
 
   console.log('\n======================================================');
   console.log('ALL SQLITE MODERNIZATION & RELIABILITY TESTS PASSED!');
