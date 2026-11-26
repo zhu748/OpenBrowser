@@ -1,6 +1,6 @@
 'use strict';
 
-const { navigateFirefoxStartup } = require('./firefox-fingerprint');
+const { navigateFirefoxContext } = require('./firefox-fingerprint');
 
 async function firefoxContext(item) {
   if (!item.bidiConnection?.command || item.stopping || item.cleanedUp) throw new Error('Firefox session is unavailable');
@@ -13,7 +13,7 @@ async function firefoxContext(item) {
 async function navigateFirefox(item, url) {
   const context = await firefoxContext(item);
   // Reuse verified context emulation and per-origin permission preparation.
-  await navigateFirefoxStartup(item.bidiConnection, context, [url]);
+  await navigateFirefoxContext(item.bidiConnection, context, url, { wait: 'interactive' });
 }
 
 async function screenshotFirefox(item, format) {

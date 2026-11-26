@@ -103,15 +103,19 @@ async function closeInstaller(value) {
   if (!exited()) { try { child.kill(); } catch (_) {} }
 }
 
+function isExtensionsCdpUnavailable(message) {
+  return /not available|unknown method|wasn't found|not found|unsupported/i.test(message);
+}
+
 async function reconcileOnConnection(connection, desired, managedPaths = []) {
-  // OpenBrowser 148 kernels may lack Chrome Extensions.* CDP domain.
+  // Older Chrome and bundled kernels may lack the Extensions.* CDP domain.
   // Probe first; if unavailable, keep browser alive and rely on --load-extension only.
   let current;
   try {
     current = await connection.command('Extensions.getExtensions');
   } catch (error) {
     const msg = String(error && error.message || error || '');
-    if (/not available|unknown method|was not found|not found|unsupported/i.test(msg)) {
+    if (isExtensionsCdpUnavailable(msg)) {
       return {
         installed: desired.map((item) => ({ ...item, chromeExtensionId: null })),
         extensions: [],
@@ -154,4 +158,4 @@ async function portConnection(port) {
   };
 }
 
-module.exports = { PipeConnection, closeInstaller, reconcileOnConnection, portConnection };
+module.exports = { PipeConnection, closeInstaller, reconcileOnConnection, portConnection, isExtensionsCdpUnavailable };

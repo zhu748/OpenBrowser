@@ -21,11 +21,23 @@ async function main() {
     child = app.process();
     const page = await app.firstWindow();
     await page.waitForFunction(() => !!globalThis.__router && !!globalThis.__localRequest);
+    const notifications = page.getByRole("button", { name: "通知", exact: true });
+    const unreadBadge = notifications.locator("..").locator(".p-badge");
+    await notifications.click();
+    await page.getByText("暂无消息", { exact: true }).waitFor();
+    assert.equal(await unreadBadge.isVisible(), false, "a fresh workspace has no unread badge");
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => globalThis.__localActionTrack("ui_action"));
+    await notifications.click();
+    await page.getByText("暂无消息", { exact: true }).waitFor();
+    assert.deepEqual(await page.evaluate(() => globalThis.__localRequest("notifications:list")), []);
+    await page.keyboard.press("Escape");
+
     const markup = '<img src="x" onerror="globalThis.__notificationInjected=true">';
     await page.evaluate(async message => {
       await globalThis.__localRequest("notifications:append", { title: "Maintenance notice", message });
     }, markup);
-    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await notifications.click();
     await page.getByText("Maintenance notice").waitFor();
     assert.ok((await page.locator("body").innerText()).includes(markup));
     assert.equal(await page.evaluate(() => globalThis.__notificationInjected), undefined);
@@ -39,7 +51,7 @@ async function main() {
       .catch(error => { assert.match(error.message, /closed|destroyed|disconnected/i); });
     const [code] = await closed;
     assert.equal(code, 1, "unexpected host failures exit with a failure status");
-    console.log("MAINTENANCE_UI_SELFTEST OK (real notification popover, escaped markup, read command, fatal shutdown exit 1)");
+    console.log("MAINTENANCE_UI_SELFTEST OK (empty notification popover, local activity, escaped markup, read command, fatal shutdown exit 1)");
   } finally {
     if (child?.exitCode === null) await app.close();
     await fs.rm(root, { recursive: true, force: true, maxRetries: 3 });

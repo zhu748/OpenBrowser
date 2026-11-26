@@ -14,7 +14,7 @@ const { createCssFontResponseRewriter } = require('../automation/css-font-respon
 const { ImageSizeFilter } = require('../automation/image-size-filter');
 const { applyFingerprintToTab, buildFingerprint, buildWorkerInjectionScript, forgetFingerprintOwner, forgetFingerprintTarget } = require('../automation/fingerprint');
 const { fpLog } = require('../automation/fingerprint-debug-log');
-const { LIVE_PROBE_EXPRESSION, PAUSED_DOCUMENT_PROBE } = require('../automation/fingerprint/delivery-probe');
+const { buildDocumentDeliveryProbe } = require('../automation/fingerprint/delivery-probe');
 const { deriveFontPlaceholder } = require('../automation/font-placeholder');
 const { fingerprintForNativeKernelInject } = require('../automation/kernel-init-sync');
 const { resolveProfileLanguage, resolveProfileTimezone } = require('../automation/locale-from-country');
@@ -311,6 +311,10 @@ module.exports = {
           return;
         }
       }
+      if (!item.stopping && event?.method === 'Network.responseReceivedExtraInfo'
+          && Object.keys(event.params?.headers || {}).some(name => name.toLowerCase() === 'set-cookie')) {
+        void this.captureRunningCookies?.(item);
+      }
       // Failed loads may never produce a response-stage pause.
       if (event?.method === 'Network.loadingFailed') workerScriptPrefixer.cleanupFailedRequest(event);
       // Fetch.requestPaused at Request stage (responseStatusCode == null) is handled by
@@ -388,6 +392,7 @@ module.exports = {
       if (event?.method === 'Target.targetDestroyed') {
         const destroyedId = event.params?.targetId;
         if (!destroyedId) return;
+        if (!item.stopping) void this.captureRunningCookies?.(item);
         destroyedDuringDiscovery?.add(destroyedId);
         for (const check of pendingDetachChecks) if (check.targetId === destroyedId) check.destroyed = true;
         forgetTargetRuntimePolicy(item, destroyedId);
@@ -897,7 +902,7 @@ module.exports = {
     });
     if (openerlessPageGate) {
       const result = await sessionCall('Runtime.evaluate', {
-        expression: PAUSED_DOCUMENT_PROBE, returnByValue: true,
+        expression: buildDocumentDeliveryProbe(injectFp, { paused: true }), returnByValue: true,
       }, 4000);
       const verified = evaluateFingerprintDelivery(enriched, baseFp, result.result?.value, { strict: true, probeHighEntropy: false });
       if (result.exceptionDetails || !verified.ok) {
@@ -905,7 +910,9 @@ module.exports = {
       }
     }
     setupGuard?.assertActive();
-    item.fpAppliedHash = fingerprintConfigHash(injectFp);
+    const hash = fingerprintConfigHash(injectFp);
+    if (setupGuard) setupGuard.fingerprintHash = hash;
+    item.fpAppliedHash = hash;
     item.fingerprint = baseFp;
     return injectFp;
   },
@@ -955,6 +962,7 @@ module.exports = {
     }
 
     const timeout = Math.min(5000, Math.max(1000, Number(options.timeout) || 3500));
+    const targetFp = fingerprint || item?.fingerprint || {};
     let liveProbe = null;
     let probeWarning = null;
 
@@ -977,7 +985,7 @@ module.exports = {
           liveProbe = { probeError: probeWarning };
         } else {
           const probeRes = await cdp.call(probeTab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-            expression: LIVE_PROBE_EXPRESSION,
+            expression: buildDocumentDeliveryProbe(fingerprintForNativeKernelInject(targetFp)),
             returnByValue: true,
             awaitPromise: true,
           }, timeout);
@@ -991,7 +999,6 @@ module.exports = {
       }
     }
 
-    const targetFp = fingerprint || item?.fingerprint || {};
     const evalResult = evaluateFingerprintDelivery(profile, targetFp, liveProbe, { strict: true });
     if (probeWarning && !evalResult.warnings.includes(probeWarning)) {
       evalResult.warnings.push(probeWarning);
@@ -1115,13 +1122,19 @@ module.exports = {
       : profileOrId;
     if (!profile) throw new Error('profile not found');
     const running = this.running?.get(profile.id);
+    if (running?.fingerprint && !running.stopping && !running.cleanedUp) {
+      const fingerprint = structuredClone(running.fingerprint);
+      if ((running.engine || fingerprint.engine) === 'firefox') {
+        fingerprint.delivery = running.capabilities?.fingerprintDelivery ? 'verified-document' : 'configured';
+      }
+      return fingerprint;
+    }
     if (this.profilePrefersFirefox?.(profile)) {
-      const fingerprint = running?.fingerprint || require('../automation/firefox-fingerprint').buildFirefoxFingerprint({
+      const fingerprint = require('../automation/firefox-fingerprint').buildFirefoxFingerprint({
         ...profile, hostScreen: profile.hostScreen ?? hostScreenSummary(),
       }, this.chooseBrowser(profile, 'firefox').version);
-      return { ...structuredClone(fingerprint), delivery: running?.capabilities?.fingerprintDelivery ? 'verified-document' : 'configured' };
+      return { ...fingerprint, delivery: 'configured' };
     }
-    if (running?.fingerprint) return structuredClone(running.fingerprint);
     const kernelVersion = profile.kernelVersion || this.chooseBrowser(profile, 'chromium').version;
     return buildFingerprint({ ...profile, kernelVersion, hostScreen: profile.hostScreen ?? hostScreenSummary() });
   },

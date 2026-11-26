@@ -3,7 +3,7 @@
 // Resolve declared UA intent without I/O, host injection or device sampling.
 const { buildUaProfile, randomUaForSeed, normalizeUaOs, normalizeSelectedOsVersion, desktopUaOsForRelease, parseOsFromUa } = require('../user-agent');
 const { OPENBROWSER_KERNEL_VERSION } = require('../versions');
-const { resolveUaPatchVersion, resolvePublishedChromeVersion } = require('../ua-version');
+const { resolveUaPatchVersion, resolveRandomChromeVersion } = require('../ua-version');
 
 function normalizeClientHints(hints) {
   // Normalize at the configuration boundary so custom, random and mobile UA
@@ -41,7 +41,7 @@ function resolvePersonaUa({ profile, privacy, fpIn, draw, fingerprintVersion }) 
   const uaOs = configuredOs || (uaOverride ? parseOsFromUa(uaOverride) : '');
   const releaseOs = uaOs === 'macos' && clientHintsIn.architecture === 'arm' ? 'macos_arm' : uaOs;
   const strictFull = (fpIn.uaVersionRandomized
-    ? resolvePublishedChromeVersion(kernelFull, releaseOs, uaOverride)
+    ? resolveRandomChromeVersion(kernelFull, releaseOs, uaOverride)
     : fpIn.uaPatchRandomized && resolveUaPatchVersion(kernelFull, uaOverride)) || kernelFull;
   const strictUa = fpIn.uaStrict || fpIn.uaGenerated;
   if (strictUa && uaOverride && strictMajor) {

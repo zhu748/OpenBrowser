@@ -10,7 +10,7 @@ import { n as ProfileForm } from './useAsyncGate-D7VA7DLY.js';
 import { r as Fingerprint, t as createAccordions } from './createDefaultAccordions-CO1KkbkO.js';
 import { t as ProfileMetadata } from './mate-group-CBm6kY0g.js';
 import ProfileImportFile from './workbench-profile-import-file.js';
-import { requireFingerprintPreviewRows } from './workbench-fingerprint-draft.js';
+import { fingerprintPreviewInput, requireFingerprintPreviewRows } from './workbench-fingerprint-draft.js';
 
 const props = defineProps({ shared: { type: Object, required: true } });
 const { collapsed, inputsGroup, previewInputs, isBatch, createCount, shuffleFingerprint, choosePreset, metaData,
@@ -39,7 +39,9 @@ async function create() {
   try {
     await formGate.waitUntilReady();
     clearGuide();
-    const params = await prepareCreateParams({ inputs: inputsGroup.value, metadata: metaData.value, createCount: createCount.value });
+    const { os, osVersion, coreType } = readFields(previewInputs.value, {}, { validate: false });
+    const params = await prepareCreateParams({ inputs: inputsGroup.value, metadata: metaData.value, createCount: createCount.value,
+      additionalParams: { os, osVersion, coreType } });
     if (importError.value) return showStatus(-1, importError.value);
     if (!upload.value) return showStatus(-1, $t('请选择要导入的文件。'));
     const currentUpload = upload.value;
@@ -64,38 +66,36 @@ async function create() {
 }
 
 async function fingerprintRows(rows, params) {
-  const { fontType, canvas, webGL, audioContext, speechVoices, clientRects, macInfo } = readFields(previewInputs.value);
   const groups = new Map();
   rows.forEach((row, index) => {
     const os = row.os || params.os;
     const matchesDefaultOs = String(os || '').toLowerCase() === String(params.os || '').toLowerCase();
-    const engine = {
+    const selection = fingerprintPreviewInput({ ...params, ...row,
       coreType: row.coreType || params.coreType || browsers.Chrome,
       coreVersion: row.coreVersion || '',
       useLatestCore: !row.coreVersion,
       os,
       osVersion: row.osVersion || (matchesDefaultOs ? params.osVersion : '') || '',
-    };
-    const key = JSON.stringify(engine);
-    if (!groups.has(key)) groups.set(key, { engine, indices: [] });
+      userAgent: row.userAgent,
+      _custom_ua: true,
+    });
+    const key = JSON.stringify(selection);
+    if (!groups.has(key)) groups.set(key, { selection, indices: [] });
     groups.get(key).indices.push(index);
   });
   const fingerprints = new Array(rows.length);
-  await Promise.all(Array.from(groups.values(), async ({ engine, indices }) => {
-    const selection = {
-      fontType, canvas, webGL, audioContext, speechVoices, clientRects, macInfo, macAddr: params.macAddr, ...engine,
-      webGLInfo: params.webGLInfo, hardwareConcurrent: params.hardwareConcurrent, deviceMemory: params.deviceMemory,
-      ...(params.webGLInfo === 2 ? {
-        webGLManufacturer: params.webGLManufacturer, webGLRender: params.webGLRender,
-      } : {}),
-    };
+  await Promise.all(Array.from(groups.values(), async ({ selection, indices }) => {
     // File import allows 200 rows, while a single preview request accepts 100.
     const previewLimit = 100;
     for (let offset = 0; offset < indices.length; offset += previewLimit) {
       const batch = indices.slice(offset, offset + previewLimit);
-      const generated = await globalThis.electronAPI.send('util:genRandomFingerprint', selection, batch.length);
-      const previews = requireFingerprintPreviewRows(generated, batch.length);
-      batch.forEach((index, position) => { fingerprints[index] = previews[position]; });
+      try {
+        const generated = await globalThis.electronAPI.send('util:genRandomFingerprint', selection, batch.length);
+        const previews = requireFingerprintPreviewRows(generated, batch.length);
+        batch.forEach((index, position) => { fingerprints[index] = previews[position]; });
+      } catch (error) {
+        throw new Error(`第 ${rows[batch[0]].rowNum || batch[0] + 1} 行：${error.message}`, { cause: error });
+      }
     }
   }));
   return fingerprints;

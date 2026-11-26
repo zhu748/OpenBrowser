@@ -11,6 +11,8 @@ const { buildFirefoxFingerprint } = require("../../automation/firefox-fingerprin
 const { fromRoxy, toRoxy } = require("../profile-dto");
 const { buildProjectLookup, decorateProfile } = require("../profile-index");
 const { profileFromPreview, savePreviewProfiles } = require('../fingerprint-draft');
+const { hostScreenSummary } = require('../../engine/launch-display');
+const { readKernelVersion } = require('../../engine/launch-profile');
 const object = (value) =>
   value && typeof value === "object" && !Array.isArray(value);
 
@@ -136,8 +138,25 @@ function profilesNextNumber(service) {
 
 async function profilesRead(service, p) {
   const e = service.engine;
-  const r = e.profileForEdit(String(p.id));
-  return { ...service.decorate(r.profile), rev: r.rev };
+  const { profile, rev } = e.profileForEdit(String(p.id));
+  const row = { ...service.decorate(profile), rev };
+  if (p.hardwarePreview !== true) return row;
+  const selected = e.browserSelection(profile.engine, profile.engineVersion).browser;
+  const kernelVersion = (selected && await readKernelVersion(e, selected).catch(() => selected.version))
+    || (profile.engineVersion === 'latest' ? undefined : profile.engineVersion);
+  const configured = { ...profile, kernelVersion, hostScreen: hostScreenSummary() };
+  // Use the saved identity even if an older configuration is still running.
+  // The editor must also open when a profile's kernel was uninstalled.
+  const fp = buildFingerprint(configured);
+  row.hardwarePreview = {
+    webGLManufacturer: fp.webgl.vendor,
+    webGLRender: fp.webgl.renderer,
+    hardwareConcurrent: fp.hardwareConcurrency,
+    deviceMemory: fp.deviceMemory,
+    ...(row.deviceNameSwitch && !row.deviceName && fp.deviceName ? { deviceName: fp.deviceName } : {}),
+    ...(row.macInfo && !row.macAddr && fp.mac.value ? { macAddr: fp.mac.value } : {}),
+  };
+  return row;
 }
 
 async function profilesCreate(service, p) {
@@ -328,8 +347,7 @@ async function profilesUpgradeKernels(service, { groups } = {}) {
       const key = JSON.stringify([profile.engine, target.version]);
       if (!kernelVersions.has(key)) {
         const browser = engine.chooseBrowser(profile, profile.engine);
-        kernelVersions.set(key, engine.kernelManager?.readInstalledVersion
-          ? await engine.kernelManager.readInstalledVersion(browser) : browser.version);
+        kernelVersions.set(key, await readKernelVersion(engine, browser));
       }
       const kernelVersion = kernelVersions.get(key);
       const fp = profile.engine === 'firefox' ? buildFirefoxFingerprint(profile, kernelVersion)

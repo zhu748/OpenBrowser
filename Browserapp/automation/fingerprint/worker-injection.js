@@ -57,16 +57,7 @@ function buildWorkerInjectionScript(fp, options = {}) {
     // nearest step — same policy as the main-world script, shared in injection-config.js.
     deviceMemory: injectionDeviceMemory(fp),
     webgl: injectionWebgl(fp),
-    // Intentionally divergent from the main-world CFG (main passes fp.webgpu || null
-    // through unchanged; this side restructures to {mode, gpu} and synthesises a
-    // webgl-gpu fallback).
-    webgpu: fp.webgpu ? {
-      mode: String(fp.webgpu.mode || 'real'),
-      gpu: fp.webgpu.gpu || fp.webgl?.gpu || null,
-    } : (fp.webgl?.gpu ? {
-      mode: 'webgl',
-      gpu: fp.webgl.gpu,
-    } : null),
+    webgpu: fp.webgpu || null,
     canvas: injectionCanvas(fp),
     seed: fp.seed,
     stability: injectionStability(fp),

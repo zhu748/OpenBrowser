@@ -16,7 +16,7 @@ import { i as defaultTemplate } from './utils-CnUy4XUk.js';
 import { t as Header } from './views-header-CcjwXPjG.js';
 import { a as provideProfileForm } from './useAsyncGate-D7VA7DLY.js';
 import { t as useWindowCreateCore } from './useWindowCreateCore-01alf0RN.js';
-import { invalidateFingerprintDraft } from './workbench-fingerprint-draft.js';
+import { invalidateFingerprintDraft, profileTemplateSettings } from './workbench-fingerprint-draft.js';
 import CreateSingle from './workbench-profile-create-single.js';
 import CreateBatch from './workbench-profile-create-batch.js';
 import CreateFromFile from './workbench-profile-create-file.js';
@@ -130,7 +130,7 @@ async function loadTemplates() {
   for (const template of templates) {
     if (!template.id) continue;
     const id = String(template.id);
-    map[id] = JSON.parse(template.content);
+    map[id] = profileTemplateSettings(JSON.parse(template.content));
     options.push({ label: template.templateName, value: id, action: true });
   }
   templateById.value = map;
@@ -167,7 +167,7 @@ const templateActions = computed(() => [{
 async function saveTemplate(templateName, id) {
   await core.formGate.waitUntilReady();
   if (!core.mainSetting.value.length) throw Error($t('窗口配置尚未加载，请重新打开编辑器'));
-  const content = JSON.stringify(readFields(fields.value));
+  const content = JSON.stringify(profileTemplateSettings(readFields(fields.value)));
   const params = { templateName, content };
   const { code, msg } = id
     ? await requests.window.userMdfWindowTemplateInfoCreate({ id, ...params })

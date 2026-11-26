@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh the bundled UA pool from the official Chrome Version History API."""
+"""Refresh the bundled UA pool from Chrome Version History and Chrome for Testing."""
 
 from concurrent.futures import ThreadPoolExecutor
 import json
@@ -12,6 +12,7 @@ from urllib.request import urlopen
 
 SOURCE = 'https://developer.chrome.com/docs/web-platform/versionhistory/reference'
 ENDPOINT = 'https://versionhistory.googleapis.com/v1/chrome/platforms/{platform}/channels/{channel}/versions'
+CFT_ENDPOINT = 'https://googlechromelabs.github.io/chrome-for-testing/known-good-versions-with-downloads.json'
 OUTPUT = Path(__file__).resolve().parents[1] / 'automation/data/chrome-release-versions.json'
 PLATFORMS = {
     'windows': 'win64',
@@ -20,6 +21,13 @@ PLATFORMS = {
     'linux': 'linux',
     'android': 'android',
     'ios': 'ios',
+}
+# Match the download platforms used by automation/kernel/discovery.js.
+CFT_PLATFORMS = {
+    'win64': 'windows',
+    'mac-x64': 'macos',
+    'mac-arm64': 'macos_arm',
+    'linux64': 'linux',
 }
 CHANNELS = ('stable', 'beta', 'dev', 'canary')
 EXTENDED_STABLE_PLATFORMS = {'win64', 'mac', 'mac_arm64'}
@@ -50,8 +58,33 @@ def channel_versions(request):
         query['filter'] = next_filter
 
 
+def chrome_for_testing_versions():
+    with urlopen(CFT_ENDPOINT, timeout=30) as response:
+        rows = json.load(response)['versions']
+
+    versions = {os_name: set() for os_name in CFT_PLATFORMS.values()}
+    for row in rows:
+        for asset in row['downloads'].get('chrome', []):
+            os_name = CFT_PLATFORMS.get(asset['platform'])
+            if not os_name or not asset['url'].startswith('https://'):
+                continue
+            version = row['version']
+            if not VERSION.fullmatch(version):
+                raise ValueError(f'Unexpected Chrome version {version!r} from {CFT_ENDPOINT}')
+            versions[os_name].add(version)
+    if not all(versions.values()):
+        raise ValueError('Chrome for Testing has no browser builds for a supported platform')
+    return versions
+
+
 def snapshot_text(versions, channels):
-    info = {'source': SOURCE, 'endpoint': ENDPOINT, 'platforms': PLATFORMS, 'channels': channels}
+    info = {
+        'source': SOURCE,
+        'endpoint': ENDPOINT,
+        'platforms': PLATFORMS,
+        'channels': channels,
+        'chromeForTesting': {'endpoint': CFT_ENDPOINT, 'platforms': CFT_PLATFORMS},
+    }
     lines = [json.dumps(info, indent=2).removesuffix('\n}') + ',', '  "versions": {']
     for os_name, releases in versions.items():
         lines.append(f'    "{os_name}": {{')
@@ -82,10 +115,12 @@ def main():
         for channel in channels[platform]
     ]
     with ThreadPoolExecutor(max_workers=8) as pool:
-        for os_name, releases in pool.map(channel_versions, requests):
-            for version in releases:
-                major = version.split('.', 1)[0]
-                versions[os_name].setdefault(major, set()).add(version)
+        cft = pool.submit(chrome_for_testing_versions)
+        sources = [*pool.map(channel_versions, requests), *cft.result().items()]
+    for os_name, releases in sources:
+        for version in releases:
+            major = version.split('.', 1)[0]
+            versions[os_name].setdefault(major, set()).add(version)
 
     with TemporaryDirectory(dir=OUTPUT.parent) as directory:
         snapshot = Path(directory) / OUTPUT.name

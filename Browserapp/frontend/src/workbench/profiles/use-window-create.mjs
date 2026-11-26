@@ -81,7 +81,7 @@ function useWindowCreate(options = {}) {
   }
 
   async function shuffleFingerprint(inputs) {
-    if (await updateFingerprint(inputs)) notify(0, $t('指纹刷新成功'));
+    if (await updateFingerprint(inputs, { randomizeUaVersion: true })) notify(0, $t('指纹刷新成功'));
   }
 
   function ensureFingerprintPreview() {

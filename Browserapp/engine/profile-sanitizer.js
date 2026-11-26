@@ -6,7 +6,7 @@ const { isNoCredentialProxy } = require('../shared/proxy-redact');
 const { profileProxyAssociation, normalizedProxyAssociationId } = require("./proxy-helpers");
 const { normalizeCoordinates, normalizeGeolocationAccuracy, resolveDoNotTrackMode, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions,
   normalizeHardwareConcurrency, normalizeDeviceMemory, normalizeStabilitySettings,
-  DEVICE_MEMORY_TIERS, toFiniteNumber: finite } = require("../shared/profile-values");
+  DEVICE_MEMORY_TIERS, MAX_FINGERPRINT_DPR, toFiniteNumber: finite } = require("../shared/profile-values");
 const { normalizeLanguageTags } = require('../automation/locale-from-country');
 
 const { fingerprintVersion } = require("../automation/fingerprint/generation");
@@ -485,8 +485,8 @@ function sanitizeFingerprintConfig(fp, privacyCores, privacyMemory, profileOs) {
   set("colorDepth", [24, 30].includes(Number(fp.colorDepth)) ? Number(fp.colorDepth) : undefined);
   set("hdr", bool(fp.hdr));
   set("devicePixelRatio", (() => {
-    const n = Number(fp.devicePixelRatio);
-    return Number.isFinite(n) && n > 0 ? Math.min(5, Math.max(0.5, Math.round(n * 100) / 100)) : undefined;
+    const n = finite(fp.devicePixelRatio);
+    return n > 0 ? Math.min(MAX_FINGERPRINT_DPR, Math.max(0.5, Math.round(n * 100) / 100)) : undefined;
   })());
 
   // --- Noise-mode group (fingerprint-level twins of privacy-level modes;

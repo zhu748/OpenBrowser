@@ -105,6 +105,7 @@ function makeStubFirefox(tmp) {
   // Exercise the production BiDi client and launch barriers without a network socket.
   const originalWebSocket = global.WebSocket;
   const commands = [];
+  let reportedVersion = '141.0';
   let rejectPreload = false;
   let rejectFilter = false;
   const remote = (value) => {
@@ -123,13 +124,14 @@ function makeStubFirefox(tmp) {
         setImmediate(() => engine.running.get('env-900')?.child.kill('SIGTERM'));
       }
       let result = {};
+      if (command.method === 'session.new') result = { capabilities: { browserVersion: reportedVersion } };
       if (command.method === 'script.addPreloadScript') result = { script: 'firefox-preload' };
       if (command.method === 'webExtension.install') result = { extension: 'local-workers@openbrowser.local' };
       if (command.method === 'browsingContext.getTree') result = { contexts: [{ context: 'initial', url: 'about:blank' }] };
       if (command.method === 'browsingContext.create') result = { context: 'extra' };
       if (command.method === 'script.evaluate') {
         const fp = engine.running.get('env-900').fingerprint;
-        result = { type: 'success', result: command.params.expression === LIVE_PROBE_EXPRESSION
+        result = { type: 'success', result: command.params.expression.includes(LIVE_PROBE_EXPRESSION)
           ? remote({ platform: fp.platform, userAgent: fp.userAgent, hardwareConcurrency: fp.hardwareConcurrency, languages: fp.languages, timezone: fp.timezone, vendor: '', screenWidth: fp.screen.width, screenHeight: fp.screen.height, devicePixelRatio: fp.screen.devicePixelRatio })
           : { type: 'undefined' } };
       }
@@ -183,6 +185,34 @@ function makeStubFirefox(tmp) {
       assert.ok(!startup.includes('undefined'));
       await writeFirefoxLaunchPreferences(root, { extraPrefs: firefoxExtraUserPrefs({ ...next, advanced: {} }, native) });
       assert.strictEqual(await fsp.readFile(filename, 'utf8'), unchanged.replace(/user_pref\("media\..*\);\r\n/, ''));
+    });
+    await check('invalid fingerprint leaves existing browser data intact', async () => {
+      const root = engine.profileRoot(profile.id);
+      const cookies = path.join(root, 'cookies.sqlite');
+      const invalid = { ...profile, userAgent: 'Mozilla/5.0 Gecko/20100101 Firefox/100.0',
+        advanced: { ...profile.advanced, clearCookiesOnStart: true, saveCookies: false } };
+      await fsp.mkdir(root, { recursive: true });
+      await fsp.writeFile(cookies, 'existing cookies');
+      await engine.syncProfiles([invalid]);
+      try {
+        await assert.rejects(engine.start(invalid), { code: 'FINGERPRINT_CONFIG_INVALID' });
+        assert.equal(await fsp.readFile(cookies, 'utf8'), 'existing cookies');
+        assert.equal(engine.running.has(profile.id), false);
+      } finally {
+        await fsp.rm(cookies, { force: true });
+        await engine.syncProfiles([profile]);
+      }
+    });
+    await check('mismatched Firefox runtime version blocks preload and startup navigation', async () => {
+      const before = commands.length;
+      reportedVersion = '140.0';
+      try {
+        await assert.rejects(engine.start(profile), { code: 'KERNEL_VERSION_MISMATCH' });
+        assert.equal(engine.running.has(profile.id), false);
+        assert.equal(commands.slice(before).some(command => ['script.addPreloadScript', 'browsingContext.navigate'].includes(command.method)), false);
+      } finally {
+        reportedVersion = '141.0';
+      }
     });
     const started = await engine.start(profile);
     await check('start() launches via the firefox pipeline', () => {

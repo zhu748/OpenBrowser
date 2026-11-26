@@ -20,7 +20,7 @@ const { removeSingletonFiles, writeBrowserStartupDiagnostic, formatBrowserStartu
 const { prepareLaunchProfile, createStartupResources, reportPlatformPreflight } = require('./launch-preparation');
 const { writeFirefoxLaunchPreferences } = require('./launch-preferences');
 const { hostScreenSummary } = require('./launch-display');
-const { ensureLegacyFingerprintSeed } = require('./launch-profile');
+const { prepareLaunchFingerprintSeed, readKernelVersion } = require('./launch-profile');
 const { profileWriteGuard } = require('./profile-write-guard');
 const { captureProfileLaunchRevision } = require('./profile-lifecycle');
 const { attachBrowserExitHandlers } = require('./browser-exit');
@@ -167,6 +167,9 @@ module.exports = {
       // Firefox tree and report a missing selection directly.
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
       browser = this.chooseBrowser(profile, 'firefox', lifecycleGeneration);
+      browser = { ...browser, version: await readKernelVersion(this, browser) };
+      this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+      assertLaunchProfileCurrent();
       root = this.profileRoot(profile.id);
       startupResources.root = root;
       const rootCheck = await validateProfileRootSecure(this.profileDataRootPath, root, profile.id, { create: true });
@@ -178,6 +181,17 @@ module.exports = {
       });
       startupResources.profileLock = profileLock;
       startupResources.lifecycleGeneration = lifecycleGeneration;
+
+      // Resolve the identity and validate it before touching saved browser data.
+      this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+      assertLaunchProfileCurrent = await prepareLaunchFingerprintSeed(this, profile, assertLaunchProfileCurrent);
+      this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+      const pageNetwork = this.networkInfo.get(profile.id) || {};
+      const fingerprint = buildFirefoxFingerprint({
+        ...profile,
+        hostScreen: hostScreenSummary(),
+        fingerprintLaunchSeed: profile.privacy?.refreshFingerprintOnStart ? randomBytes(16).toString('hex') : '',
+      }, browser.version);
 
       // Firefox keeps its singleton state inside the profile root; remove the
       // Chromium leftovers the shared root may still carry, then create the
@@ -198,19 +212,6 @@ module.exports = {
         this.emit({ type: 'profile-launch-data-cleared', id: profile.id, removed: clearedLaunchData });
       }
 
-      const pageNetwork = this.networkInfo.get(profile.id) || {};
-      // Same one-time migration as the Chromium pipeline: a Firefox profile whose identity
-      // still hangs off its sequence id gets its persistent seed rolled before the build.
-      assertLaunchProfileCurrent();
-      const seedEnsured = ensureLegacyFingerprintSeed(this, profile);
-      assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
-      await seedEnsured;
-      assertLaunchProfileCurrent();
-      const fingerprint = buildFirefoxFingerprint({
-        ...profile,
-        hostScreen: hostScreenSummary(),
-        fingerprintLaunchSeed: profile.privacy?.refreshFingerprintOnStart ? randomBytes(16).toString('hex') : '',
-      }, browser.version);
       let customStartUrls = this.resolveStartupUrls(profile);
       if (profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession) {
         const restoredUrls = await readDeferredSessionUrls(root);

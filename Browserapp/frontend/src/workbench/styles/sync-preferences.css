@@ -102,6 +102,6 @@
   right: 24px;
   position: fixed!important;
 }
-.p-tabpanels {
+.p-tabpanels:has(> .p-tabpanel .save-button) {
   margin-bottom: 48px;
 }

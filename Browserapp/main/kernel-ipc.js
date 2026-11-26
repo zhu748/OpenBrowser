@@ -3,7 +3,7 @@
 /** Browser-kernel IPC domain, registered through the host sender guard. */
 function registerKernelIpc({ registerTrustedIpc, engine, dialog, platform = process.platform }) {
   registerTrustedIpc('kernel:status', () => engine.kernelStatus());
-  registerTrustedIpc('kernel:download', async (_event, force) => engine.ensureIndependentKernel(Boolean(force)));
+  registerTrustedIpc('kernel:download', async (_event, force) => engine.downloadChromeStable(Boolean(force)));
   registerTrustedIpc('kernel:check-update', async () => engine.checkKernelUpdate());
   registerTrustedIpc('kernel:set-custom', async (_event, binaryPath) => engine.setCustomKernel(String(binaryPath || '')));
   registerTrustedIpc('kernel:policy', async (_event, policy) => engine.setKernelPolicy(policy || {}));

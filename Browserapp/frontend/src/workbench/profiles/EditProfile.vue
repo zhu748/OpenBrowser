@@ -33,13 +33,14 @@ const collapsed = ref(false);
 const saving = ref(false);
 const loaded = ref(false);
 let original;
+let originalCookieText;
 const canSave = computed(() => loaded.value && gate.isReady.value && !saving.value);
 const basicInputs = computed(() => inputs.value?.[0] ?? []);
 
 onBeforeMount(async () => {
   try {
     const { code, data, msg } = await requests.window.userGetWindowInfoV2List({
-      windowIds: route.query.id, isDelete: 0, page_index: 1, page_size: 1,
+      windowIds: route.query.id, isDelete: 0, page_index: 1, page_size: 1, hardwarePreview: true,
     });
     if (code !== 0) {
       showStatus(code, msg);
@@ -53,6 +54,7 @@ onBeforeMount(async () => {
     original = profile;
     const [formInputs, formFingerprint] = await loadProfile(profile, showSuccess, gate);
     inputs.value = formInputs;
+    originalCookieText = findField(formInputs[0], 'cookie')?.value;
     fingerprint.value = formFingerprint;
     for (const key of ['platformUrl', 'platformUserName', 'platformPassword']) fingerprint.value[key] = '';
     metadata.value = {
@@ -69,7 +71,7 @@ onBeforeMount(async () => {
 
 async function refreshFingerprint() {
   try {
-    const [updated] = await gate.run(() => shuffleFingerprint(inputs.value));
+    const [updated] = await gate.run(() => shuffleFingerprint(inputs.value, { randomizeUaVersion: true }));
     if (!updated) return;
     Object.assign(fingerprint.value, updated);
     showSuccess(0, $t('指纹刷新成功'));
@@ -90,6 +92,7 @@ async function save() {
   try {
     await gate.waitUntilReady();
     const values = { ...fingerprint.value, ...readFields(inputs.value, toRaw(metadata.value)) };
+    if (findField(basicInputs.value, 'cookie')?.value === originalCookieText) delete values.cookie;
     const checked = await resolveProxy(values, { checkChannel: userConfig.value.ipChecker, isDirect: false, testProxy });
     if (checked !== values) {
       const proxyField = findField(basicInputs.value, 'proxyInfoList');

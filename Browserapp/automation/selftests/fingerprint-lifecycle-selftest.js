@@ -3,11 +3,13 @@
 const assert = require('node:assert/strict');
 const { buildFingerprint, applyFingerprintToTab, forgetFingerprintOwner, forgetFingerprintTarget } = require('../fingerprint');
 const { ensureLegacyFingerprintSeed } = require('../../engine/start');
-const { pageFingerprintConnection, closePageFingerprintConnections } = require('../../engine/fingerprint-transport');
+const { pageFingerprintConnection, confirmPageFingerprintConnection,
+  closePageFingerprintConnections } = require('../../engine/fingerprint-transport');
 const cdp = require('../../cdp');
 const { applyTargetRuntimePolicy, forgetTargetRuntimePolicy } = require('../../engine/runtime-policy');
 const { PersistentConnection } = require('../../network/cdp-connection');
-const { applyFingerprintToSession } = require('../../engine/fingerprint-injection');
+const { applyFingerprintToSession, fingerprintFor } = require('../../engine/fingerprint-injection');
+const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
 const deferred = () => { let resolve;const promise = new Promise((done) => { resolve = done; });return { promise, resolve }; };
 const turn = () => new Promise((resolve) => setImmediate(resolve));
 const profile = (id) => ({ id, name: id, os: 'Windows', fingerprintSeed: id, privacy: { fontListMode: 'real' } });
@@ -32,6 +34,26 @@ const apply = (owner, key, value = fp, scope = '') => applyFingerprintToTab(
 const count = (owner, method) => owner.calls.filter((call) => call.method === method).length;
 
 (async () => {
+  await test('fingerprint inspection reports the engine actually running during a saved engine change', () => {
+    const saved = { ...profile('engine-change'), engine: 'chromium' };
+    const live = buildFirefoxFingerprint({ ...saved, engine: 'firefox' }, '156.0');
+    const item = { engine: 'firefox', fingerprint: live, capabilities: { fingerprintDelivery: true } };
+    const engine = {
+      profiles: new Map([[saved.id, saved]]), running: new Map([[saved.id, item]]),
+      profilePrefersFirefox: value => value.engine === 'firefox',
+      chooseBrowser: (_value, family) => ({ version: family === 'firefox' ? '156.0' : '156.0.8078.79' }),
+    };
+    const inspect = () => fingerprintFor.call(engine, saved.id);
+    assert.equal(inspect().delivery, 'verified-document');
+    assert.match(inspect().userAgent, /Firefox\//);
+    item.fingerprint = buildFingerprint(saved);
+    item.engine = 'chromium';
+    engine.profiles.set(saved.id, { ...saved, engine: 'firefox' });
+    assert.equal(inspect().delivery, undefined);
+    item.stopping = true;
+    assert.equal(inspect().delivery, 'configured');
+    assert.match(inspect().userAgent, /Firefox\//);
+  });
   await test('concurrent identical injection is serialized and registers exactly once', async () => {
     const gate = deferred();const owner = transport({ command: (method) => method === 'Page.addScriptToEvaluateOnNewDocument' ? gate.promise : undefined });
     const operations = Array.from({ length: 12 }, () => apply(owner, 'concurrent'));
@@ -129,6 +151,43 @@ const count = (owner, method) => owner.calls.filter((call) => call.method === me
       await disconnect(new Error('late disconnect event'), fallback);
       assert.equal(item.fpAppliedTargets.has('page'), true);
     } finally { probe.resolve([]); Object.assign(cdp, saved); closePageFingerprintConnections(item); }
+  });
+  await test('a late fallback disconnect distinguishes a verified replacement from an open socket', async () => {
+    const saved = { connect: cdp.connect, tabs: cdp.tabs };
+    for (const verified of [true, false]) {
+      const snapshot = deferred(), first = transport(), replacement = transport(), item = { fpAppliedTargets: new Set(['page']) };
+      const tab = { id: 'page', webSocketDebuggerUrl: 'ws://localhost/page' };
+      let disconnect, stops = 0;
+      const engine = { handleBrowserGone() { stops += 1; } };
+      cdp.connect = async (_url, options) => { disconnect = options.onDisconnect; return first; };
+      cdp.tabs = () => snapshot.promise;
+      try {
+        await pageFingerprintConnection(engine, item, tab);
+        first.close();
+        const check = disconnect(new Error('fallback socket lost'), first);
+        cdp.connect = async () => replacement;
+        await pageFingerprintConnection(engine, item, tab);
+        assert.throws(() => confirmPageFingerprintConnection(item, tab.id, first), { code: 'FINGERPRINT_TARGET_CLOSED' });
+        if (verified) confirmPageFingerprintConnection(item, tab.id, replacement);
+        snapshot.resolve([tab]);
+        await check;
+        assert.equal(stops, verified ? 0 : 1);
+      } finally { snapshot.resolve([]); Object.assign(cdp, saved); closePageFingerprintConnections(item); }
+    }
+  });
+  await test('a socket disconnected during fallback opening cannot be returned as an active owner', async () => {
+    const saved = { connect: cdp.connect, tabs: cdp.tabs };
+    const connection = transport(), item = {}, tab = { id: 'closing', webSocketDebuggerUrl: 'ws://localhost/closing' };
+    cdp.tabs = async () => [];
+    cdp.connect = async (_url, options) => {
+      connection.close();
+      await options.onDisconnect(new Error('socket lost during opening'), connection);
+      return connection;
+    };
+    try {
+      await assert.rejects(pageFingerprintConnection({}, item, tab), { code: 'FINGERPRINT_TARGET_CLOSED' });
+      assert.equal(item.fingerprintPageConnections.size, 0);
+    } finally { Object.assign(cdp, saved); closePageFingerprintConnections(item); }
   });
   await test('policy registrations survive handover by remaining scoped to their actual session', async () => {
     const owner = {}, a = transport(), b = transport();

@@ -6,10 +6,53 @@ const selection = value => ({ os: value.os, osVersion: value.osVersion,
   coreType: value.coreType, coreVersion: value.coreVersion, useLatestCore: value.useLatestCore });
 const hardwareFields = ['hardwareConcurrent', 'deviceMemory'];
 const deviceFields = ['deviceName', 'macAddr'];
+const previewControls = [...hardwareFields, 'resolutionType', 'resolutionX', 'resolutionY',
+  'deviceInfo', 'deviceNameSwitch', 'macInfo', 'position', 'isPositionBaseIp', 'latitude', 'longitude', 'precisionPos',
+  'fontType', 'canvas', 'webGL', 'webGLInfo', 'webGpu', 'audioContext', 'speechVoices', 'clientRects', 'webRTC', 'doNotTrack',
+  'isDisplayLanguageBaseIp', 'displayLanguage', 'language', 'isTimeZone', 'timeZone',
+  'openBattery', 'openCharging', 'chargingTime', 'dischargingTime', 'level', 'openBluetooth', 'bluetoothAdapter',
+  'openNetwork', 'networkType', 'networkSpeed', 'downloadSpeed', 'latency', 'maxDownloadSpeed', 'saveFlowMode'];
 
 const previewIncomplete = '指纹预览未返回完整身份，请重试';
 const nonBlank = value => typeof value === 'string' && value.trim() !== '';
 const record = value => value && typeof value === 'object' && !Array.isArray(value);
+
+function fingerprintControls(values, generated) {
+  const controls = {};
+  for (const key of previewControls) {
+    if (Object.hasOwn(values, key)) controls[key] = values[key];
+  }
+  for (const key of deviceFields) {
+    if (Object.hasOwn(values, key)) controls[key] = values[key] === generated?.[key] ? '' : values[key];
+  }
+  if (values.webGLInfo === 2) {
+    controls.webGLManufacturer = values.webGLManufacturer;
+    controls.webGLRender = values.webGLRender;
+  }
+  return controls;
+}
+
+export function fingerprintPreviewInput(values) {
+  const draft = values._fingerprintDraft;
+  const controls = fingerprintControls(values, draft?.generatedHardware);
+  if (Object.hasOwn(values, 'font') && values.font !== draft?.generatedFonts) controls.font = values.font;
+  else if (Array.isArray(values.fontList) && values.fontList.join(';') !== draft?.generatedFonts) controls.fontList = values.fontList;
+  return { ...selection(values), ...controls,
+    ...(values._custom_ua === true && nonBlank(values.userAgent) ? { userAgent: values.userAgent } : {}) };
+}
+
+export function profileTemplateSettings(value) {
+  const { _fingerprintDraft: draft, id, dirId, windowId, rev, fingerprintSeed, fingerprintVersion, hardwarePreview, ...settings } = value;
+  for (const key of [...hardwareFields, ...deviceFields, ...(settings.webGLInfo === 2 ? [] : ['webGLManufacturer', 'webGLRender'])]) {
+    if (Object.hasOwn(draft?.generatedHardware || {}, key) && settings[key] === draft.generatedHardware[key]) delete settings[key];
+  }
+  if (draft?.generatedFonts !== undefined) {
+    if (settings.font === draft.generatedFonts) delete settings.font;
+    if (Array.isArray(settings.fontList) && settings.fontList.join(';') === draft.generatedFonts) delete settings.fontList;
+  }
+  if (draft?.generated === true && settings._custom_ua !== true && settings.userAgent === draft.userAgent) delete settings.userAgent;
+  return settings;
+}
 
 function completePreview(row) {
   if (!record(row) || !nonBlank(row.userAgent)) return false;
@@ -64,6 +107,9 @@ export function restoreFingerprintDraft(groups, value) {
     uaVersionRandomized: value.privacy?.fingerprint?.uaVersionRandomized,
     uaPatchRandomized: value.privacy?.fingerprint?.uaPatchRandomized,
     clientHints: value.privacy?.fingerprint?.clientHints,
+    generatedHardware: Object.fromEntries(deviceFields
+      .filter(key => nonBlank(value.hardwarePreview?.[key]))
+      .map(key => [key, value.hardwarePreview[key]])),
   } : null);
   state.identity = saved;
 }
@@ -82,6 +128,7 @@ export function markFingerprintFieldExplicit(groups, key) {
 }
 
 export async function refreshFingerprintDraft(groups, { read, apply, find, request, count = 1, preview = true,
+  updateHardware,
   preserve = [], keepSeed = false, randomizeUaVersion = false }) {
   const state = stateFor(groups, true);
   const field = find(primary(groups), 'userAgent');
@@ -105,38 +152,48 @@ export async function refreshFingerprintDraft(groups, { read, apply, find, reque
     /Firefox\//i.test(values.userAgent) !== (selected.coreType === 'Firefox');
   if (preview && field && mismatchedEngine) field.value = '';
   try {
-    const controls = {};
-    const generated = state.identity?.generatedHardware || {};
-    for (const key of [...hardwareFields, 'resolutionType', 'resolutionX', 'resolutionY',
-      'deviceInfo', 'deviceNameSwitch', 'macInfo',
-      'position', 'isPositionBaseIp', 'latitude', 'longitude', 'precisionPos']) {
-      if (Object.hasOwn(values, key)) controls[key] = values[key];
-    }
-    for (const key of deviceFields) {
-      if (Object.hasOwn(values, key)) controls[key] = values[key] === generated[key] ? '' : values[key];
-    }
-    const rows = await request({ ...selected, count, fontType: values.fontType,
+    const controlsFor = values => fingerprintControls(values, state.identity?.generatedHardware);
+    const requestPreview = controls => request({ ...selected, count,
       profileId: state.profileId,
       ...(retainedIdentity ? { reuseDraft: retainedIdentity } : {}),
-      ...(randomizeUaVersion ? { randomizeUaVersion, previousUserAgent: values.userAgent } : {}),
-      ...controls,
-      canvas: values.canvas, webGL: values.webGL, audioContext: values.audioContext,
-      webGLInfo: values.webGLInfo,
-      ...(preview && values.webGLInfo === 2 ? {
-        webGLManufacturer: values.webGLManufacturer, webGLRender: values.webGLRender,
-      } : {}),
-      speechVoices: values.speechVoices, clientRects: values.clientRects });
-    if (!preview) return requireFingerprintPreviewRows(rows, count);
-    const active = current();
-    if (!active) return [];
+      ...(randomizeUaVersion ? { randomizeUaVersion, previousUserAgent: values.userAgent }
+        : (preserve.includes('userAgent') && !mismatchedEngine ? { userAgent: values.userAgent } : {})),
+      ...controls });
+    let controls = controlsFor(values);
+    let rows, active;
+    for (;;) {
+      let failure, failed = false;
+      try {
+        rows = await requestPreview(controls);
+      } catch (error) {
+        failed = true;
+        failure = error;
+      }
+      if (!preview) {
+        if (keepSeed && (!current() || state.identity?.seed !== retainedIdentity?.seed)) return [];
+        if (failed) throw failure;
+        return requireFingerprintPreviewRows(rows, count);
+      }
+      active = current();
+      if (!active) return [];
+      const latestControls = controlsFor(active);
+      if (JSON.stringify(latestControls) === JSON.stringify(controls)) {
+        if (failed) throw failure;
+        break;
+      }
+      // Rebuild for newer form choices before publishing a seed or hardware
+      // projection. Detached batch requests keep their original snapshot.
+      controls = latestControls;
+    }
     const [row] = requireFingerprintPreviewRows(rows, count);
     const { _fingerprintDraft: identity, _openbrowser: _runtime, ...visible } = row;
     if (retainedIdentity && identity.seed !== retainedIdentity.seed) throw Error('指纹预览已失效，请刷新后重试');
     const keepCustomUa = preserve.includes('userAgent') && Boolean(active.userAgent) && !mismatchedEngine;
     if (keepCustomUa) delete visible.userAgent;
-    if (active.webGLInfo === 2) { delete visible.webGLManufacturer; delete visible.webGLRender; }
+    if (active.webGLInfo !== 1) { delete visible.webGLManufacturer; delete visible.webGLRender; }
     delete visible.hardwareConcurrent;
     delete visible.deviceMemory;
+    if (identity.generatedFonts) { delete visible.font; delete visible.fontList; }
     const previousGenerated = state.identity?.generatedHardware || {};
     const generatedHardware = { ...identity.generatedHardware };
     for (const key of deviceFields) {
@@ -153,13 +210,16 @@ export async function refreshFingerprintDraft(groups, { read, apply, find, reque
     }
     state.identity = { ...identity, generatedHardware };
     apply(groups, visible);
+    updateHardware?.(row);
     if (field) {
       field._custom_ua = keepCustomUa;
       field.invalid = false;
       field.errorMsg = undefined;
       field.help = '';
     }
-    return rows;
+    // The editor also merges this result into its save state. Use the same
+    // accepted fields and provenance for both the display and the save.
+    return [{ ...visible, _fingerprintDraft: state.identity }, ...rows.slice(1)];
   } catch (error) {
     if (!preview) throw error;
     if (current() && field) {

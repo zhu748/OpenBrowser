@@ -10,13 +10,15 @@
 const cdp = require('../cdp');
 const { applyFingerprintToTab, buildFingerprint } = require('../automation/fingerprint');
 const { resolveProfileTimezone } = require('../automation/locale-from-country');
-const { LIVE_PROBE_EXPRESSION, fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
+const { fpLog, summarizeFp, logPath: fingerprintLogPath } = require('../automation/fingerprint-debug-log');
+const { buildDocumentDeliveryProbe, LIVE_PROBE_EXPRESSION } = require('../automation/fingerprint/delivery-probe');
 const { sanitizeUrlForLog } = require('../automation/log-sanitizer');
 const { compileUrlAccessPolicy } = require('../automation/url-access-policy');
 const { runtimePolicyProfile, applyTargetRuntimePolicy, pruneRuntimePolicyPages } = require('./runtime-policy');
 const { evaluateFingerprintDelivery } = require('../automation/request-header-rewriter');
 const { fingerprintConfigHash, isEphemeralDocumentUrl } = require('./fingerprint-injection');
-const { pageFingerprintConnection, pageFingerprintRegistration, closePageFingerprintConnections } = require('./fingerprint-transport');
+const { pageFingerprintConnection, pageFingerprintRegistration, confirmPageFingerprintConnection,
+  closePageFingerprintConnections } = require('./fingerprint-transport');
 const { isActiveFingerprintSession } = require('./fingerprint-session');
 
 module.exports = {
@@ -98,6 +100,29 @@ module.exports = {
     };
     closePageFingerprintConnections(policyOwner, liveTargetIds());
     const sessions = options.trackOn?.fingerprintTargetSessions || new Map();
+    const flatConnection = trackOn?.workerFingerprintConnection;
+    const ownsFlatTarget = (targetId, sessionId) => Boolean(flatConnection && !flatConnection.closed
+      && !trackOn.stopping && !trackOn.cleanedUp && trackOn.workerFingerprintConnection === flatConnection
+      && trackOn.fingerprintTargetSessions?.get(sessionId)?.targetId === targetId);
+    function assertFlatTarget(targetId, sessionId) {
+      if (!ownsFlatTarget(targetId, sessionId)) {
+        throw Object.assign(new Error('Fingerprint target session was closed'), { code: 'FINGERPRINT_TARGET_CLOSED' });
+      }
+    }
+    async function invokeFlat(targetId, sessionId, method, params, timeout) {
+      assertFlatTarget(targetId, sessionId);
+      const result = await flatConnection.command(method, params, { sessionId, timeout });
+      assertFlatTarget(targetId, sessionId);
+      return result;
+    }
+    function hasVerifiedReplacement(targetId, sessionId) {
+      if (ownsFlatTarget(targetId, sessionId) || !applied.has(targetId)) return false;
+      for (const state of trackOn.fingerprintSessionStates?.values() || []) {
+        if (state.targetId === targetId && state.ready && isActiveFingerprintSession(trackOn, state)
+          && state.fingerprintHash === fpHash()) return true;
+      }
+      return false;
+    }
     const sessionTargets = new Map([...sessions].map(([sessionId, target]) => [target.targetId, { ...target, sessionId }]));
     const policyIds = new Set(tabs.map((tab) => tab.id));
     for (const id of sessionTargets.keys()) policyIds.add(id);
@@ -108,15 +133,15 @@ module.exports = {
       if (!target.sessionId && hasAttachedOwner(targetId)) continue;
       try {
         await applyTargetRuntimePolicy({ owner: policyOwner, targetId, profile: policyProfile, targetType: target.targetType,
-          registrationOwner: target.sessionId ? options.trackOn.workerFingerprintConnection : pageFingerprintRegistration(policyOwner, target.tab),
+          registrationOwner: target.sessionId ? flatConnection : pageFingerprintRegistration(policyOwner, target.tab),
           registrationScope: target.sessionId || '',
           invoke: target.sessionId
-            ? (method, params) => options.trackOn.workerFingerprintConnection.command(method, params, { sessionId: target.sessionId, timeout: 5000 })
+            ? (method, params) => invokeFlat(targetId, target.sessionId, method, params, 5000)
             : async (method, params) => (await openFallback(target.tab)).command(method, params),
         });
       } catch (error) {
         if (!target.sessionId && (error?.code === 'FINGERPRINT_FALLBACK_RETIRED' || hasAttachedOwner(targetId))) continue;
-        if (target.sessionId && !sessions.has(target.sessionId)) continue;
+        if (target.sessionId && !ownsFlatTarget(targetId, target.sessionId)) continue;
         const current = target.tab ? await cdp.tabs(port).catch(() => null) : null;
         if (current && !current.some((tab) => tab.id === targetId)) continue;
         throw error;
@@ -160,11 +185,11 @@ module.exports = {
         continue;
       }
       try {
-        const connection = flat ? options.trackOn.workerFingerprintConnection
-          : await openFallback(tab);
+        const connection = flat ? flatConnection : await openFallback(tab);
         const invoke = (method, params, timeout = 8000) => {
-          if (!flat) assertFallbackOwner(tab.id);
-          return connection.command(method, params, { ...(flat ? { sessionId: flat.sessionId } : {}), timeout });
+          if (flat) return invokeFlat(tab.id, flat.sessionId, method, params, timeout);
+          assertFallbackOwner(tab.id);
+          return connection.command(method, params, { timeout });
         };
         const fontBlobBridge = fp?.fontBlobBridge || options?.trackOn?.fontBlobBridge || options?.trackOn?.fingerprint?.fontBlobBridge;
         if (fontBlobBridge?.channelName && tab.webSocketDebuggerUrl) {
@@ -183,8 +208,13 @@ module.exports = {
           registrationScope: flat?.sessionId || '',
           livePatchDocument: isEphemeralDocumentUrl(tab.url),
         });
+        // Website code can legitimately replace the function used by the
+        // installation check. Verify live values there, and require the
+        // installation check on documents owned by the browser or workspace.
+        const controlled = isEphemeralDocumentUrl(tab.url) || this.isStartPageUrl?.(tab.url);
         const probe = await invoke('Runtime.evaluate', {
-          expression: LIVE_PROBE_EXPRESSION, returnByValue: true, awaitPromise: true,
+          expression: controlled ? buildDocumentDeliveryProbe(fp) : LIVE_PROBE_EXPRESSION,
+          returnByValue: true, awaitPromise: true,
         }, 8000);
         const live = probe?.result?.value ?? probe?.value ?? null;
         const exception = probe?.exceptionDetails || probe?.result?.exceptionDetails;
@@ -204,10 +234,19 @@ module.exports = {
           phase, profileId: profile.id, tabId: tab.id,
           url: sanitizeUrlForLog(tab.url).slice(0, 240), intended: summarizeFp(fp), live,
         });
-        if (!flat) assertFallbackOwner(tab.id);
+        if (flat) {
+          assertFlatTarget(tab.id, flat.sessionId);
+          const state = trackOn.fingerprintSessionStates?.get(flat.sessionId);
+          if (state) state.fingerprintHash = fpHash();
+        } else {
+          assertFallbackOwner(tab.id);
+          confirmPageFingerprintConnection(policyOwner, tab.id, connection);
+        }
         applied.add(tab.id);
       } catch (error) {
-        if (!flat && (error?.code === 'FINGERPRINT_FALLBACK_RETIRED' || hasAttachedOwner(tab.id))) {
+        const replaced = () => flat ? hasVerifiedReplacement(tab.id, flat.sessionId)
+          : (error?.code === 'FINGERPRINT_FALLBACK_RETIRED' || hasAttachedOwner(tab.id));
+        if (replaced()) {
           await fpLog('inject.defer-tab', { phase, profileId: profile.id, tabId: tab.id, reason: 'auto-attach-owner' });
           continue;
         }
@@ -218,10 +257,11 @@ module.exports = {
           url: sanitizeUrlForLog(tab.url).slice(0, 240),
           error: String(error.message || error),
         });
-        applied.delete(tab.id);
         // A closed target is harmless only when a fresh snapshot confirms its removal.
         // Timeouts, script exceptions and missing probes on live tabs remain failures.
         const liveTabs = await cdp.tabs(port).catch(() => null);
+        if (replaced()) continue;
+        applied.delete(tab.id);
         if (liveTabs && !liveTabs.some((entry) => entry.id === tab.id)) continue;
         throw error;
       }

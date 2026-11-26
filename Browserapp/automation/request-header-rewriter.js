@@ -770,6 +770,14 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
         mismatches.push({ field, expected, actual: liveProbe[field], message: `${field} 未按配置交付` });
       }
     }
+    if (Object.hasOwn(liveProbe, 'screenWorkArea')) {
+      for (const key of ['availWidth', 'availHeight', 'availLeft', 'availTop']) {
+        const expected = fingerprint.screen?.[key], actual = liveProbe.screenWorkArea?.[key];
+        if (expected != null && actual !== expected) {
+          mismatches.push({ field: `screen.${key}`, expected, actual, message: `screen.${key} 未按配置交付` });
+        }
+      }
+    }
     if (fingerprint.vendor != null && liveProbe.vendor !== fingerprint.vendor) {
       mismatches.push({ field: 'vendor', expected: fingerprint.vendor, actual: liveProbe.vendor, message: 'navigator.vendor 未按配置交付' });
     }

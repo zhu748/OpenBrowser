@@ -49,10 +49,76 @@ const repo = path.resolve(__dirname, "../..");
     await page.getByText("窗口管理", { exact: true }).first().waitFor();
     await page.evaluate(() => globalThis.__router.push("/kernels"));
     await page.getByText("内核管理", { exact: true }).last().waitFor();
+    const find = page.getByRole("button", { name: "获取可下载版本", exact: true });
+    const versionSelect = page.getByLabel("内核版本", { exact: true });
+    const showHistorical = page.getByRole("button", { name: /^显示历史版本/ });
+    const install = page.getByRole("button", { name: "安装所选版本", exact: true });
+    await find.click();
+    await showHistorical.waitFor({ timeout: 60000 });
+    const recent = await versionSelect.locator("option").evaluateAll(options => options.map(option => option.value));
+    assert.equal(recent.length, 15);
+    await showHistorical.click();
+    const olderOptions = versionSelect.locator('optgroup[label="历史版本"] option');
+    const historical = await olderOptions.evaluateAll(options => options.map(option => option.value));
+    assert.ok(historical.length > 0);
+    assert.equal(new Set([...recent, ...historical].map(version => version.split(".")[0])).size,
+      recent.length + historical.length);
+    assert.ok(Number(historical[0].split(".")[0]) < Number(recent.at(-1).split(".")[0]));
+    result.chromiumVersion = historical[0];
+    await versionSelect.selectOption(result.chromiumVersion);
+    await page.getByRole("button", { name: "收起历史版本", exact: true }).click();
+    assert.equal(await versionSelect.inputValue(), recent[0]);
+    assert.equal(await olderOptions.count(), 0);
+    await showHistorical.click();
+    await versionSelect.selectOption(result.chromiumVersion);
+    await install.click();
+    await waitUntil(
+      () => page.evaluate(async (version) => {
+        const rows = await globalThis.__localRequest("kernels:list");
+        return rows.some(row => row.engine === "chromium" && row.version === version);
+      }, result.chromiumVersion),
+      { timeout: 300000 },
+    );
+    const checked = await page.evaluate(version => globalThis.ops.kernelCheck("chromium", version), result.chromiumVersion);
+    assert.equal(checked.version, result.chromiumVersion);
+    result.checks.push("展开 Chrome 历史版本并从官方目录下载、安装和检测旧内核");
+
+    const chromiumProfile = await page.evaluate(async (version) => {
+      const request = globalThis.__localRequest;
+      const options = {
+        coreType: "Chrome", coreVersion: version, os: "Linux",
+        startupParam: "--headless", sandboxPermission: true, defaultOpenUrl: ["about:blank"],
+        isDisplayLanguageBaseIp: false, isTimeZone: false, isPositionBaseIp: false,
+      };
+      const [draft] = await request("fingerprint:preview", {
+        ...options, randomizeUaVersion: true, previousUserAgent: `Chrome/${version}`,
+      });
+      return request("profiles:create", {
+        ...options, windowName: "Chrome 历史版本启动", userAgent: draft.userAgent, _fingerprintDraft: draft._fingerprintDraft,
+      });
+    }, result.chromiumVersion);
+    const major = result.chromiumVersion.split(".")[0];
+    assert.match(chromiumProfile.userAgent, new RegExp(`Chrome/${major}\\.`));
+    const published = require("../automation/data/chrome-release-versions.json").versions.linux[major];
+    if (published?.length > 1) {
+      assert.ok(published.some(version => chromiumProfile.userAgent.includes(`Chrome/${version} `)));
+      assert.ok(!chromiumProfile.userAgent.includes(`Chrome/${result.chromiumVersion} `));
+    }
+    try {
+      await page.evaluate(id => globalThis.__localRequest("profiles:start", { id }), chromiumProfile.id);
+      const running = await waitUntil(() => page.evaluate(id => globalThis.ops.profileStatus()
+        .then(rows => rows.find(row => row.id === id && row.running)), chromiumProfile.id));
+      assert.equal(running.executable, checked.path);
+      assert.equal(running.userAgent, chromiumProfile.userAgent);
+    } finally {
+      await page.evaluate(id => globalThis.__localRequest("profiles:stop", { id }), chromiumProfile.id);
+    }
+    result.checks.push("用已安装的 Chrome 历史版本启动窗口并复用随机 UA");
+
     await page.getByLabel("内核类型", { exact: true }).selectOption("firefox");
-    await page
-      .getByRole("button", { name: "获取可下载版本", exact: true })
-      .click();
+    assert.equal(await showHistorical.count(), 0);
+    assert.equal(await olderOptions.count(), 0);
+    await find.click();
     await waitUntil(
       async () =>
         (await page
@@ -67,9 +133,7 @@ const repo = path.resolve(__dirname, "../..");
     assert.match(result.version, /^\d/);
     console.log("Firefox catalog:", result.version);
     result.checks.push("真实原后端读取 Mozilla 可安装版本目录");
-    await page
-      .getByRole("button", { name: "安装所选版本", exact: true })
-      .click();
+    await install.click();
     await waitUntil(
       async () => {
         const rows = await page.evaluate(() =>

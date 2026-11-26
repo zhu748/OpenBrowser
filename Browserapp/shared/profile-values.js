@@ -8,6 +8,7 @@
   const MAX_LATITUDE = 90;
   const MAX_LONGITUDE = 180;
   const CURRENT_FINGERPRINT_VERSION = 4;
+  const MAX_FINGERPRINT_DPR = 5;
   const DEVICE_MEMORY_TIERS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 
   function formatLocalMacAddress(bytes) {
@@ -40,6 +41,27 @@
       cores: cores === 0 ? 0 : normalizeHardwareConcurrency(fingerprint.hardwareConcurrency)
         ?? (cores > 0 ? Math.min(64, Math.max(1, Math.round(cores))) : null),
       memory: memory === 0 ? 0 : normalizeDeviceMemory(fingerprint.deviceMemory) ?? (memory === 6 ? 6 : normalizeDeviceMemory(memory)),
+    };
+  }
+
+  function resolveFingerprintSurfaceModes(privacy = {}, fingerprint = privacy.fingerprint || {}) {
+    function mode(key, allowed, fallback) {
+      // Legacy objects carry surface data. Only a mode string overrides the
+      // policy selected in privacy settings.
+      const overridden = fingerprint[key];
+      const value = typeof overridden === 'string' ? overridden : privacy[key];
+      return allowed.includes(value) ? value : fallback;
+    }
+    return {
+      canvas: mode('canvas', ['real', 'noise', 'blocked'], privacy.canvas === 'blocked' ? 'blocked' : 'noise'),
+      webgl: mode('webgl', ['real', 'noise', 'blocked'], privacy.webgl === 'blocked' ? 'blocked' : 'noise'),
+      webglMeta: mode('webglMeta', ['real', 'noise', 'blocked', 'custom'],
+        ['real', 'blocked', 'custom'].includes(privacy.webglMeta) ? privacy.webglMeta : 'noise'),
+      audio: mode('audio', ['real', 'noise', 'muted'], privacy.audio === 'muted' ? 'muted' : 'noise'),
+      clientRects: mode('clientRects', ['real', 'noise'], 'noise'),
+      speech: mode('speech', ['real', 'noise', 'blocked'], privacy.speech === 'blocked' || privacy.speech === 'real' ? privacy.speech : 'noise'),
+      webgpu: mode('webgpu', ['real', 'blocked', 'webgl'], privacy.webgpu === 'blocked' ? 'blocked'
+        : (privacy.webgpu == null || privacy.webgpu === '' || privacy.webgpu === 'webgl' ? 'webgl' : 'real')),
     };
   }
 
@@ -176,6 +198,6 @@
   return Object.freeze({ maxProfileNumber, toFiniteNumber, toBoundedInteger, normalizeLatitude, normalizeLongitude, normalizeBatterySnapshot, normalizeNetworkInformation, normalizeNetworkConditions,
     isValidLatitude, isValidLongitude, normalizeCoordinates, normalizeGeolocationAccuracy, resolveDoNotTrackMode,
     normalizeHardwareConcurrency, normalizeDeviceMemory, normalizeStabilitySettings,
-    MAX_LATITUDE, MAX_LONGITUDE, DEVICE_MEMORY_TIERS, CURRENT_FINGERPRINT_VERSION,
-    formatLocalMacAddress, formatGeneratedDeviceName, resolveFingerprintDeviceSettings, geolocationUsesIp });
+    MAX_LATITUDE, MAX_LONGITUDE, DEVICE_MEMORY_TIERS, CURRENT_FINGERPRINT_VERSION, MAX_FINGERPRINT_DPR,
+    formatLocalMacAddress, formatGeneratedDeviceName, resolveFingerprintDeviceSettings, resolveFingerprintSurfaceModes, geolocationUsesIp });
 });

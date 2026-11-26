@@ -7,7 +7,7 @@ const { fingerprintConsistencyIssues, assertFingerprintConsistency } = require('
 const { resolveProfileGeolocation } = require('./geolocation-policy');
 
 const { normalizeNetworkInformation, normalizeHardwareConcurrency, normalizeDeviceMemory,
-  resolveDoNotTrackMode, toFiniteNumber, formatLocalMacAddress } = require('../../shared/profile-values');
+  resolveDoNotTrackMode, resolveFingerprintSurfaceModes, toFiniteNumber, formatLocalMacAddress } = require('../../shared/profile-values');
 const { normalizeUaOs } = require('../user-agent');
 const { resolveProfileTimezone } = require('../locale-from-country');
 const { OPENBROWSER_KERNEL_VERSION } = require('../versions');
@@ -99,31 +99,13 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
     return allowed.includes(String(value || '')) ? String(value) : fallback;
   };
 
-  const canvasMode = mode('canvas', ['real', 'noise', 'blocked'], privacy.canvas === 'blocked' ? 'blocked' : 'noise');
-  const webglMode = mode('webgl', ['real', 'noise', 'blocked'], privacy.webgl === 'blocked' ? 'blocked' : 'noise');
-  // Metadata (UNMASKED vendor/renderer) can stay real while image noise still runs.
-  const webglMetaMode = mode('webglMeta', ['real', 'noise', 'blocked', 'custom'], privacy.webglMeta === 'real' ? 'real' : (privacy.webglMeta === 'blocked' ? 'blocked' : (privacy.webglMeta === 'custom' ? 'custom' : 'noise')));
-  const audioMode = mode('audio', ['real', 'noise', 'muted'], privacy.audio === 'muted' ? 'muted' : 'noise');
-  const clientRectsMode = mode('clientRects', ['real', 'noise'], 'noise');
+  const { canvas: canvasMode, webgl: webglMode, webglMeta: webglMetaMode, audio: audioMode, clientRects: clientRectsMode,
+    speech: speechMode, webgpu: webgpuMode } = resolveFingerprintSurfaceModes(privacy, fpIn);
   const webrtcMode = mode('webrtc', ['real', 'proxy', 'disabled'], privacy.webrtc || 'proxy');
   // Numeric shadow of webrtc mode only (not an independent control).
   const webrtcPolicy = webrtcMode === 'disabled' ? 0 : (webrtcMode === 'proxy' ? 3 : 1);
   const mediaDevicesMode = mode('mediaDevices', ['real', 'noise', 'empty'], privacy.mediaDevices === 'real' ? 'real' : (privacy.mediaDevices === 'empty' ? 'empty' : (privacy.media === 'noise' ? 'noise' : (privacy.media === 'blocked' ? 'empty' : 'noise'))));
-  const speechChoice = privacy.speech === undefined || privacy.speech === null || privacy.speech === ""
-    ? "noise"
-    : String(privacy.speech);
-  const speechMode = mode("speech", ["real", "noise", "blocked"], speechChoice === "blocked" ? "blocked" : (speechChoice === "real" ? "real" : "noise"));
   const batteryMode = mode('battery', ['real', 'noise', 'blocked'], privacy.battery === 'blocked' ? 'blocked' : (privacy.battery === 'real' ? 'real' : 'noise'));
-  // Profiles the product saved carry an explicit choice (its own default is the WebGL derived
-  // identity, see the renderer normalisation), but a profile that never went through that step - an
-  // older record, an API created one - used to fall through to `real` here. That leaks the machine
-  // adapter (vendor / architecture) while WebGL already reports the profile GPU, which is both a
-  // hardware leak and a cross API contradiction. An unset value therefore follows the product
-  // default; an explicit `real` still means real and is left alone.
-  const webgpuChoice = privacy.webgpu === undefined || privacy.webgpu === null || privacy.webgpu === ''
-    ? 'webgl'
-    : String(privacy.webgpu);
-  const webgpuMode = mode('webgpu', ['real', 'blocked', 'webgl'], webgpuChoice === 'blocked' ? 'blocked' : (webgpuChoice === 'webgl' ? 'webgl' : 'real'));
   const bluetoothMode = mode('bluetooth', ['real', 'blocked'], privacy.bluetooth === 'blocked' ? 'blocked' : 'real');
   const stability = resolveStabilityPolicy(privacy, {
     host: fpIn.stabilityHost || privacy.stabilityHost || profile.stabilityHost || '',
@@ -269,8 +251,8 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
 
   const languages = resolvePersonaLanguages(profile);
 
-  const { screenWidth, screenHeight, availWidth, availHeight, availLeft, availTop, screenX, screenY } = resolvePersonaScreen({
-    profile, privacy, fpIn, mobileDevice, devicePersona, width, height, uaOs,
+  const { screenWidth, screenHeight, availWidth, availHeight, availLeft, availTop, screenX, screenY, dpr } = resolvePersonaScreen({
+    profile, privacy, fpIn, mobileDevice, devicePersona, width, height, uaOs, devicePixelRatio,
   });
 
   const mediaLabelTemplates = (fpIn.mediaLabels && typeof fpIn.mediaLabels === 'object')
@@ -555,7 +537,7 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
       screenY,
       colorDepth: isHdrRequested ? (Number(fpIn.colorDepth) || colorDepth || 30) : 24,
       pixelDepth: isHdrRequested ? (Number(fpIn.colorDepth) || colorDepth || 30) : 24,
-      devicePixelRatio: Number(fpIn.devicePixelRatio) || devicePixelRatio,
+      devicePixelRatio: dpr,
     },
     webgl,
     canvas: {
@@ -591,8 +573,8 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
       value: battery,
     },
     webgpu: {
-      mode: webgpuMode,
-      gpu: webglGpu,
+      mode: webgpuMode === 'webgl' && webglMetaMode === 'real' ? 'real' : webgpuMode,
+      gpu: webgl.gpu,
     },
     bluetooth: {
       mode: bluetoothMode,
@@ -655,7 +637,7 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
         },
         screen: { width: screenWidth, height: screenHeight },
         panel: { ...mobileDevice.panel },
-        dpr: mobileDevice.dpr,
+        dpr,
         gpu: { vendor: mobileDevice.gpu.vendor, renderer: mobileDevice.gpu.renderer, family: mobileDevice.gpu.family },
       }
       : null,

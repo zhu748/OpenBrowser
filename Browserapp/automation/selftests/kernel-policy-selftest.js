@@ -147,6 +147,39 @@ async function main() {
     assert.strictEqual(forcedStableDownload, true);
     console.log('  PASS  forced kernel download replaces the legacy Chrome for Testing package');
 
+    const windowsManager = new BrowserKernelManager(path.join(root, 'windows-stable'));
+    const version = '158.0.8127.88';
+    const url = `https://storage.googleapis.com/chrome-for-testing-public/${version}/win64/chrome-win64.zip`;
+    const tree = path.join(windowsManager.kernelsRoot, 'chromium-versions', version);
+    const installedStable = { source: SOURCE_CFT, engine: 'chromium', version, tree };
+    const downloads = [];
+    windowsManager.fetchChromeForTestingRelease = async () => ({ source: SOURCE_CFT, version, url });
+    windowsManager.resolveInstalled = () => ({ source: SOURCE_CFT, engine: 'chromium', version: '160.0.8157.0' });
+    windowsManager.listInstalledKernels = () => [windowsManager.resolveInstalled(), installedStable];
+    windowsManager.installChromeStable = () => assert.fail('Windows Stable must not use the enterprise MSI');
+    windowsManager.installChromiumVersion = async (wanted, sourceUrl) => {
+      downloads.push([wanted, sourceUrl]);
+      await fsp.mkdir(tree, { recursive: true });
+      await fsp.writeFile(path.join(tree, 'kernel.json'), JSON.stringify({ version, source: SOURCE_CFT }));
+      return { ...installedStable, independent: true };
+    };
+    const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' });
+    try {
+      // An extracted tree without a completed install receipt must retry.
+      const stable = await windowsManager.downloadChromeStable();
+      assert.strictEqual(stable.version, version);
+      assert.deepStrictEqual(downloads, [[version, url]]);
+      assert.deepStrictEqual(await windowsManager.downloadChromeStable(), stable);
+      assert.strictEqual(downloads.length, 1);
+      assert.strictEqual((await windowsManager.checkUpdate()).needsUpdate, false);
+      windowsManager.fetchChromeForTestingRelease = async () => { throw Error('Stable catalog unavailable'); };
+      await assert.rejects(windowsManager.downloadChromeStable(), /Stable catalog unavailable/);
+    } finally {
+      Object.defineProperty(process, 'platform', platformDescriptor);
+    }
+    console.log('  PASS  Windows Stable uses the official versioned ZIP, retries incomplete installs, and reuses completed ones');
+
     assert.throws(() => validateArchiveMemberName('../outside/chrome'));
     assert.throws(() => validateArchiveMemberName('/tmp/chrome'));
     assert.throws(() => validateArchiveMemberName('C:\\Windows\\chrome.exe'));

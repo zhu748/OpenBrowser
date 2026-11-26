@@ -12,6 +12,7 @@ const { writeFirefoxLaunchPreferences } = require('../../engine/launch-preferenc
 const { firefoxStartupArgs } = require('../kernel-versions');
 const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../firefox-fingerprint');
 const { BidiConnection, waitForFirefoxEndpoint, evaluateBidi } = require('../../network/bidi-connection');
+const { openLaunch } = require('../../rebuild/host-actions');
 
 const permissionRead = `(async()=>{let reads=0;const p=await navigator.permissions.query({get name(){reads++;return 'geolocation'}});return {reads,state:p.state}})()`;
 const first = `(async()=>{const geo='geolocation'in navigator;const permission=await ${permissionRead};
@@ -20,6 +21,50 @@ const nativePreferences = `(async()=>({notification:Notification.permission, cor
   microphone:(await navigator.permissions.query({name:'microphone'})).state,
   camera:(await navigator.permissions.query({name:'camera'})).state,
   width:document.querySelector('span').getBoundingClientRect().width}))()`;
+
+async function closeDuringEmulation(connection, keptContext) {
+  const release = Promise.withResolvers();
+  const ready = Promise.withResolvers();
+  const result = Promise.withResolvers();
+  const originalCommand = connection.command;
+  const originalEvent = connection.onEvent;
+  result.promise.catch(() => {});
+  connection.command = async function (method, params, timeout) {
+    if (method === 'emulation.setUserAgentOverride' && params.contexts?.length && params.contexts[0] !== keptContext) {
+      ready.resolve(params.contexts[0]);
+      await release.promise;
+    }
+    return originalCommand.call(this, method, params, timeout);
+  };
+  connection.onEvent = (event, client) => {
+    const task = originalEvent(event, client);
+    if (event.method === 'browsingContext.contextCreated' && event.params.parent == null) {
+      task.then(result.resolve, result.reject);
+    }
+    return task;
+  };
+  const timer = setTimeout(() => {
+    const error = Error('Firefox tab close fixture did not settle');
+    ready.reject(error);
+    result.reject(error);
+  }, 5000);
+  ready.promise.catch(() => {});
+  try {
+    const { context } = await connection.command('browsingContext.create', { type: 'tab' });
+    assert.equal(await ready.promise, context);
+    await connection.command('browsingContext.close', { context });
+    release.resolve();
+    await result.promise;
+    assert.equal(connection.closed, false);
+    const { contexts } = await connection.command('browsingContext.getTree', { maxDepth: 0 });
+    assert.deepEqual(contexts.map(entry => entry.context), [keptContext]);
+  } finally {
+    clearTimeout(timer);
+    release.resolve();
+    connection.command = originalCommand;
+    connection.onEvent = originalEvent;
+  }
+}
 async function main() {
   const binary = process.env.OPENBROWSER_FIREFOX_BINARY;
   if (!binary) { console.error('SKIP set OPENBROWSER_FIREFOX_BINARY');process.exitCode = 2;return; }
@@ -87,6 +132,20 @@ async function main() {
           const position = await evaluateBidi(connection, { context: initialized.context }, `new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(
             p=>resolve([p.coords.latitude,p.coords.longitude,p.coords.accuracy]),e=>reject(new Error('native position failure '+e.code)),{timeout:5000}))`);
           assert.deepEqual(position, [0, 0, 275], 'the same profile restores geolocation with the configured coordinates and accuracy');
+          await connection.command('permissions.setPermission', { descriptor: { name: 'geolocation' }, state: 'denied', origin: otherOrigin });
+          const item = { engine: 'firefox', bidiConnection: connection, bidiContext: initialized.context };
+          const host = { profiles: new Map([[profile.id, profile]]), profileForEdit: () => ({ profile }), async start() {},
+            running: new Map([[profile.id, item]]) };
+          assert.equal(await openLaunch(host, { id: profile.id, urls: [otherOrigin + '/os-link'] }), true);
+          const { contexts } = await connection.command('browsingContext.getTree', { maxDepth: 0 });
+          const opened = contexts.find(entry => entry.url === otherOrigin + '/os-link');
+          assert.ok(opened?.context && opened.context !== initialized.context);
+          const link = await evaluateBidi(connection, { context: opened.context }, 'globalThis.first');
+          assert.equal(link.permission.state, 'granted', 'OS links prepare native permission before the first script');
+          await connection.command('browsingContext.close', { context: opened.context });
+          await closeDuringEmulation(connection, initialized.context);
+          assert.equal(await evaluateBidi(connection, { context: initialized.context }, 'navigator.userAgent'), fingerprint.userAgent);
+          console.log('PASS Firefox tab closed during native emulation: remaining tab and BiDi session are still usable');
         }
         console.log('PASS Firefox ' + version + ' ' + mode + ': native permissions, stored-grant protection/restoration, profile preferences and storage APIs');
       } finally {

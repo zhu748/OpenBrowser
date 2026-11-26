@@ -1,5 +1,7 @@
 'use strict';
 
+const { canonicalBridgeToken } = require('./shared');
+
 const NETWORK_INFO_FIELDS = Object.freeze(['type', 'effectiveType', 'downlink', 'downlinkMax', 'rtt', 'saveData']);
 
 // Evaluated in the document's main world. The paused-tab path only reads
@@ -16,6 +18,8 @@ const documentSnapshot = `((hints, networkFields) => {
     hardwareConcurrency: navigator.hardwareConcurrency, deviceMemory: navigator.deviceMemory,
     deviceMemoryPresent: 'deviceMemory' in navigator, secureContext: globalThis.isSecureContext === true,
     vendor: navigator.vendor, screenWidth: screen.width, screenHeight: screen.height,
+    screenWorkArea: { availWidth: screen.availWidth, availHeight: screen.availHeight,
+      availLeft: screen.availLeft, availTop: screen.availTop },
     devicePixelRatio: window.devicePixelRatio, connection,
     webdriver: navigator.webdriver === true,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
@@ -57,4 +61,16 @@ const LIVE_PROBE_EXPRESSION = `(async () => {
   }
 })()`;
 
-module.exports = { LIVE_PROBE_EXPRESSION, PAUSED_DOCUMENT_PROBE, NETWORK_INFO_FIELDS };
+function buildDocumentDeliveryProbe(fingerprint, { paused = false } = {}) {
+  const token = JSON.stringify(canonicalBridgeToken(fingerprint));
+  const snapshot = paused ? PAUSED_DOCUMENT_PROBE : LIVE_PROBE_EXPRESSION;
+  return `(() => {
+    try {
+      if (Function.prototype.toString.call(Function.prototype.toString, ${token}, 'documentInstalled') === true)
+        return ${snapshot};
+    } catch (_) {}
+    return { probeError: '指纹脚本未完成安装' };
+  })()`;
+}
+
+module.exports = { LIVE_PROBE_EXPRESSION, PAUSED_DOCUMENT_PROBE, NETWORK_INFO_FIELDS, buildDocumentDeliveryProbe };

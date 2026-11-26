@@ -6,15 +6,17 @@ const { firefoxUserAgent } = require('./kernel-versions');
 const { desktopPlatformVersion, pickPersona } = require('./device-personas');
 const { CURRENT_FINGERPRINT_VERSION, fingerprintVersion } = require('./fingerprint/generation');
 const { OPENBROWSER_KERNEL_VERSION } = require('./versions');
-const { pickPublishedChromeVersion } = require('./ua-version');
+const { pickRandomChromeVersion } = require('./ua-version');
+const { readKernelVersion } = require('../engine/launch-profile');
 
-function buildEditorUa(engine, payload = {}) {
+async function buildEditorUa(engine, payload = {}) {
   const saved = engine.profiles.get(String(payload.profileId || '')) || {};
   const family = (payload.engine || saved.engine) === 'firefox' ? 'firefox' : 'chromium';
   const profile = { ...saved, engine: family, engineVersion: payload.engineVersion || saved.engineVersion };
   let browser;
   try { browser = engine.chooseBrowser(profile, family); }
   catch (error) { if (family === 'firefox' || error.code === 'KERNEL_VERSION_NOT_INSTALLED') throw error; }
+  const version = browser ? await readKernelVersion(engine, browser) : OPENBROWSER_KERNEL_VERSION;
   const savedOs = normalizeUaOs(saved.os);
   const os = normalizeUaOs(payload.os || saved.os) || (payload.userAgent ? parseOsFromUa(payload.userAgent) : 'windows');
   const samePlatform = os === savedOs || (os === 'macos' && savedOs === 'macos_arm');
@@ -24,12 +26,11 @@ function buildEditorUa(engine, payload = {}) {
       throw Object.assign(new Error('Firefox 当前支持桌面设备配置，请选择 Windows、macOS 或 Linux'), { code: 'UA_PLATFORM_UNSUPPORTED' });
     const osName = os.startsWith('mac') ? 'mac' : os.startsWith('win') ? 'win' : 'linux';
     if (payload.random) {
-      return { ...buildUaProfile({ os, userAgent: firefoxUserAgent(osName, browser.version) }),
+      return { ...buildUaProfile({ os, userAgent: firefoxUserAgent(osName, version) }),
         kernelBound: true, uaReduced: false, uaPatchRandomized: false };
     }
-    return { ...buildUaProfile({ os, userAgent: payload.userAgent || firefoxUserAgent(osName, browser.version) }), kernelBound: !payload.userAgent };
+    return { ...buildUaProfile({ os, userAgent: payload.userAgent || firefoxUserAgent(osName, version) }), kernelBound: !payload.userAgent };
   }
-  const version = browser?.version || OPENBROWSER_KERNEL_VERSION;
   const installedMajor = Number(version.split('.')[0]);
   const versionForDraft = fingerprintVersion(payload.fingerprintVersion ?? saved.fingerprintVersion
     ?? (payload.profileId ? 1 : CURRENT_FINGERPRINT_VERSION));
@@ -41,7 +42,7 @@ function buildEditorUa(engine, payload = {}) {
   const hints = keepDevice ? saved.privacy?.fingerprint?.clientHints : null;
   const generated = (ua) => {
     if (payload.random) {
-      const full = pickPublishedChromeVersion(version, ua.os, payload.previousUserAgent);
+      const full = pickRandomChromeVersion(version, ua.os, payload.previousUserAgent);
       return { ...withChromeUaVersion(ua, full), kernelVersion: version, kernelBound: true,
         uaReduced: false, uaVersionRandomized: true, uaPatchRandomized: false };
     }

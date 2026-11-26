@@ -12,7 +12,12 @@ export interface KernelRow {
 }
 
 type Version = { version: string } | string;
-type VersionList = Version[] | { versions: Version[] };
+type VersionList = Version[] | { versions: Version[]; historicalVersions?: Version[] };
+
+interface VersionCatalog {
+  versions: string[];
+  historicalVersions: string[];
+}
 
 export interface KernelOps {
   kernelDownload: (force: boolean) => Promise<unknown>;
@@ -33,7 +38,7 @@ export interface KernelActions {
   cancel: KernelOps['kernelCancelDownload'];
   choose: KernelOps['kernelChooseCustom'];
   setCustom: KernelOps['kernelSetCustom'];
-  versions: (family: Family) => Promise<string[]>;
+  versions: (family: Family) => Promise<VersionCatalog>;
   install: KernelOps['kernelInstallVersion'];
   check: KernelOps['kernelCheck'];
   pin: KernelOps['kernelPin'];
@@ -50,7 +55,12 @@ export function kernelActions(request: Request, subscribe: Subscribe, ops: Kerne
     setCustom: ops.kernelSetCustom,
     async versions(family) {
       const result = await ops.kernelListVersions(family, true);
-      return (Array.isArray(result) ? result : result.versions).map(row => typeof row === 'string' ? row : row.version);
+      const catalog = Array.isArray(result) ? { versions: result } : result;
+      const readVersion = (row: Version) => typeof row === 'string' ? row : row.version;
+      return {
+        versions: catalog.versions.map(readVersion),
+        historicalVersions: (catalog.historicalVersions ?? []).map(readVersion),
+      };
     },
     install: ops.kernelInstallVersion,
     check: ops.kernelCheck,

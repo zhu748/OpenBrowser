@@ -1371,10 +1371,10 @@ async function profileBatchChecks() {
 async function profilePreviewValidationChecks() {
   const vue = require('vue'), noop = () => {}, workbench = 'frontend/src/workbench/';
   const incomplete = '指纹预览未返回完整身份，请重试';
-  const previewErrors = [], statuses = [], submitted = [], imported = [], requestedCounts = [];
+  const previewErrors = [], statuses = [], submitted = [], imported = [], requestedCounts = [], requestedInputs = [];
   const draft = await rendererFixture('rebuild/workbench-fingerprint-draft.mjs', {}, {
     __localUiError: message => previewErrors.push(message),
-  }, '({ requireFingerprintPreviewRows, refreshFingerprintDraft, serializeFingerprintDraft })');
+  }, '({ requireFingerprintPreviewRows, refreshFingerprintDraft, serializeFingerprintDraft, fingerprintPreviewInput })');
   const fields = await rendererFixture(workbench + 'shared/workbench-fields.mjs', {
     './workbench-fingerprint-draft.js': draft,
   }, {}, '({ findField, selectFields, readFields, applyValues })');
@@ -1393,6 +1393,7 @@ async function profilePreviewValidationChecks() {
     assert.equal(channel, 'util:genRandomFingerprint');
     if (payload.count !== undefined) assert.equal(payload.count, count);
     requestedCounts.push(count);
+    requestedInputs.push(payload);
     return Promise.resolve(typeof reply === 'function' ? reply(count) : reply);
   } };
   const button = {}, profileForm = {}, uploadInput = {};
@@ -1424,14 +1425,13 @@ async function profilePreviewValidationChecks() {
   const stubs = new Proxy(modules, { get: (all, key) => all[key] ?? {} });
   const generate = await rendererFixture(workbench + 'profiles/profile-inputs.mjs', stubs,
     { electronAPI }, 'refreshProfileFingerprint');
-  modules['./form-inputs-CnnG6T0O.js'] = { t: generate };
-  const component = await rendererFixture(workbench + 'profiles/CreateBatch.vue', stubs);
+  const component = await rendererFixture(workbench + 'profiles/CreateBatch.vue', stubs, { electronAPI });
   const loading = vue.ref(false);
   const shared = {
     collapsed: vue.ref(false), loading, inputsGroup: vue.ref(groups), previewInputs: vue.ref(groups),
     canSubmit: vue.ref(true), createCount: vue.ref(2), profileTemplate: vue.ref({}), metaData: vue.ref({}),
     formGate: { waitUntilReady: async () => {} }, clearGuide: noop, onBack: noop,
-    prepareCreateParams: async () => ({ createCount: 2, windowName: 'Fixture' }),
+    prepareCreateParams: async () => ({ createCount: 2, windowName: 'Fixture', os: 'Linux', coreType: 'Firefox', hardwareConcurrent: '12' }),
   };
   const mount = target => {
     const render = target.setup({ shared }, { expose: noop });
@@ -1485,10 +1485,27 @@ async function profilePreviewValidationChecks() {
     assert.equal(loading.value, false);
   }
   reply = [first, second];
-  await create();
+  const prepare = shared.prepareCreateParams;
+  const waitingForProxy = Promise.withResolvers(), proxyChecked = Promise.withResolvers();
+  shared.prepareCreateParams = async () => {
+    const snapshot = await prepare();
+    waitingForProxy.resolve();
+    await proxyChecked.promise;
+    return snapshot;
+  };
+  const engineField = groups[0].find(field => field.name === 'coreType');
+  engineField.value = 'Firefox';
+  const creating = create();
+  await waitingForProxy.promise;
+  engineField.value = 'Chrome';
+  proxyChecked.resolve();
+  await creating;
+  shared.prepareCreateParams = prepare;
   assert.equal(submitted.length, 1, 'valid previews must allow a retry after failures');
   assert.deepEqual(submitted[0].fingerDetail.map(row => row._fingerprintDraft), [first._fingerprintDraft, second._fingerprintDraft]);
   assert.deepEqual(requestedCounts, Array(7).fill(2));
+  assert.deepEqual([requestedInputs.at(-1).os, requestedInputs.at(-1).coreType, requestedInputs.at(-1).hardwareConcurrent],
+    ['Linux', 'Firefox', '12'], 'batch generation uses the prepared save snapshot rather than the live form');
 
   let closedProgress = 0;
   modules['./agent-BmSFI9WH.js'].a = () => ({ currentWorkspace: vue.ref({ id: 'local' }) });
@@ -1502,7 +1519,7 @@ async function profilePreviewValidationChecks() {
   reply = count => count === 1 ? [malformed] : rowsForCount(count);
   await clickCreate(mountImport);
   assert.deepEqual(requestedCounts, [100, 1], 'test an incomplete reply after a successful import chunk');
-  assert.deepEqual(statuses.at(-1), [-1, incomplete]);
+  assert.deepEqual(statuses.at(-1), [-1, '第 101 行：' + incomplete]);
   assert.equal(imported.length, 0, 'the actual import callback must not submit partial previews');
   assert.equal(closedProgress, 1);
   assert.equal(loading.value, false);

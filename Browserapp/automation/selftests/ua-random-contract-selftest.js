@@ -5,12 +5,13 @@ const crypto = require('node:crypto');
 const ua = require('../user-agent');
 const { buildEditorUa } = require('../editor-ua');
 const { buildFingerprint, assertFingerprintConsistency } = require('../fingerprint');
-const { resolveUaPatchVersion, pickPublishedChromeVersion, resolvePublishedChromeVersion } = require('../ua-version');
+const { CURRENT_FINGERPRINT_VERSION } = require('../fingerprint/generation');
+const { resolveUaPatchVersion, pickRandomChromeVersion, resolveRandomChromeVersion } = require('../ua-version');
 const publishedVersions = require('../data/chrome-release-versions.json').versions;
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
 
-function main() {
+async function main() {
   for (const [engine, kernel, oldUa, prefix] of [
     ['chromium', '156.0.8078.74', 'Chrome/156.0.8078.74', '156.0.8078.'],
     ['firefox', '156.0', 'Firefox/156.0.74', '156.0.'],
@@ -22,30 +23,74 @@ function main() {
   assert.equal(resolveUaPatchVersion('156.0.8078.74', 'Firefox/156.0.74'), null);
   const kernelVersion = '156.0.8078.79';
   for (const [os, pool] of Object.entries(publishedVersions)) {
-    for (let major = 146; major <= 160; major++) {
+    for (let major = 113; major <= 160; major++) {
       const versions = pool[major];
       assert.ok(versions?.length > 1, `${os} Chrome ${major} supports randomization`);
       assert.equal(new Set(versions).size, versions.length);
       for (const version of versions) {
         assert.match(version, /^\d+\.\d+\.\d+\.\d+$/);
         assert.ok(version.startsWith(major + '.'));
-        assert.equal(resolvePublishedChromeVersion(versions[0], os, `Chrome/${version}`), version);
+        assert.equal(resolveRandomChromeVersion(versions[0], os, `Chrome/${version}`), version);
       }
     }
     const versions = pool[156];
     for (const version of versions) {
       const previous = `Chrome/${version}`;
-      const picked = pickPublishedChromeVersion(kernelVersion, os, previous);
+      const picked = pickRandomChromeVersion(kernelVersion, os, previous);
       assert.ok(versions.includes(picked));
       assert.notEqual(picked, version);
-      assert.equal(resolvePublishedChromeVersion('157.0.8116.1', os, previous), '157.0.8116.1');
+      assert.equal(resolveRandomChromeVersion('157.0.8116.1', os, previous), '157.0.8116.1');
     }
-    assert.equal(resolvePublishedChromeVersion(kernelVersion, os, 'Chrome/156.0.1.2'), kernelVersion);
-    assert.equal(pickPublishedChromeVersion('999.0.1.2', os, 'Chrome/999.0.1.2'), '999.0.1.2');
+    assert.equal(resolveRandomChromeVersion(kernelVersion, os, 'Chrome/156.0.1.2'), kernelVersion);
+    assert.equal(resolveRandomChromeVersion('156.0.9900.12', os, 'Chrome/156.0.9900.15'), '156.0.9900.15', 'catalog refresh retains a valid saved fallback');
   }
+  for (const os of ['windows', 'macos', 'macos_arm', 'linux']) {
+    assert.ok(publishedVersions[os][160].includes('160.0.8184.0'), `${os} includes the listed Chrome for Testing build`);
+    assert.equal(resolveRandomChromeVersion('160.0.8171.0', os, 'Chrome/160.0.8184.0'), '160.0.8184.0');
+  }
+  for (const [major, version] of [[146, '146.0.7680.165'], [147, '147.0.7727.117'], [151, '151.0.7922.138'], [156, '156.0.8078.80']]) {
+    assert.ok(publishedVersions.linux[major].includes(version), `Linux includes the downloadable build ${version}`);
+  }
+  const nextMajor = 1 + Math.max(...Object.values(publishedVersions).flatMap(Object.keys).map(Number));
+  for (const [kernel, firstPatch, lastPatch] of [[`${nextMajor}.0.8200.2`, 0, 10], [`${nextMajor + 1}.0.8224.112`, 104, 120]]) {
+    const prefix = kernel.slice(0, kernel.lastIndexOf('.') + 1);
+    const future = { profiles: new Map(), chooseBrowser: () => ({ version: kernel }) };
+    for (const os of ['Windows', 'Android', 'iOS']) {
+      let previousUserAgent = `Chrome/${kernel}`;
+      for (let i = 0; i < 4; i += 1) {
+        const generated = await buildEditorUa(future, { os, random: true, previousUserAgent });
+        assert.ok(generated.chromeFull.startsWith(prefix));
+        const patch = Number(generated.chromeFull.slice(prefix.length));
+        assert.ok(Number.isInteger(patch) && patch >= firstPatch && patch <= lastPatch);
+        assert.notEqual(ua.parseChromeVersion(previousUserAgent).full, generated.chromeFull);
+        const saved = sanitizeProfile({ id: `future-ua-${i}`, name: 'Future UA', os, userAgent: generated.userAgent,
+          fingerprintVersion: CURRENT_FINGERPRINT_VERSION,
+          privacy: { fingerprint: { uaGenerated: true, uaVersionRandomized: true, clientHints: generated.clientHints } } });
+        const runtime = buildFingerprint({ ...saved, kernelVersion: kernel });
+        assert.equal(runtime.userAgent, generated.userAgent);
+        assert.equal(runtime.userAgentMetadata.fullVersion, generated.chromeFull);
+        assertFingerprintConsistency(runtime);
+        previousUserAgent = generated.userAgent;
+      }
+    }
+    assert.equal(resolveRandomChromeVersion(kernel, 'windows', `Chrome/${prefix}${lastPatch + 1}`), kernel);
+  }
+  const incompleteVersion = `${nextMajor}.0`;
+  assert.equal(pickRandomChromeVersion(incompleteVersion, 'windows'), incompleteVersion, 'an incomplete kernel version has no known build branch');
   const firefoxEngine = { profiles: new Map(), chooseBrowser: () => ({ version: '160.0.2' }) };
+  const systemBrowser = { path: '/fixture/chrome', independent: false };
+  const systemUa = await buildEditorUa({
+    profiles: new Map(),
+    chooseBrowser: () => systemBrowser,
+    kernelManager: { async readInstalledVersion(browser) {
+      assert.equal(browser, systemBrowser);
+      return kernelVersion;
+    } },
+  }, { os: 'Windows', random: true });
+  assert.equal(systemUa.kernelVersion, kernelVersion);
+  assert.match(systemUa.userAgent, /Chrome\/156\./);
   for (let i = 0; i < 16; i++) {
-    const native = buildEditorUa(firefoxEngine, { engine: 'firefox', os: 'Windows', random: true, previousUserAgent: 'Firefox/160.0.73' });
+    const native = await buildEditorUa(firefoxEngine, { engine: 'firefox', os: 'Windows', random: true, previousUserAgent: 'Firefox/160.0.73' });
     assert.ok(native.userAgent.endsWith('Firefox/160.0'));
     assert.equal(native.uaPatchRandomized, false);
     assert.equal(native.uaReduced, false);
@@ -80,18 +125,18 @@ function main() {
   const originalRandomBytes = crypto.randomBytes;
   crypto.randomBytes = size => Buffer.alloc(size);
   try {
-    const linux = buildEditorUa(engine, { profileId: 'linux', random: true });
+    const linux = await buildEditorUa(engine, { profileId: 'linux', random: true });
     assert.equal(linux.os, 'linux');
     assert.equal(linux.metadata.platformVersion, '');
-    const mac = buildEditorUa(engine, { profileId: 'mac', random: true });
+    const mac = await buildEditorUa(engine, { profileId: 'mac', random: true });
     assert.equal(mac.os, 'macos_arm');
     assert.equal(mac.metadata.architecture, 'arm');
     assert.equal(mac.metadata.platformVersion, '14.5.0');
-    const pinnedMac = buildEditorUa(engine, { profileId: 'pinned-mac', os: 'macOS', random: true });
+    const pinnedMac = await buildEditorUa(engine, { profileId: 'pinned-mac', os: 'macOS', random: true });
     assert.equal(pinnedMac.os, 'macos_arm');
     assert.equal(pinnedMac.metadata.architecture, 'arm');
     assert.equal(pinnedMac.metadata.platformVersion, '15.7.0');
-    const switched = buildEditorUa(engine, { profileId: 'mac', os: 'Windows', random: true });
+    const switched = await buildEditorUa(engine, { profileId: 'mac', os: 'Windows', random: true });
     assert.equal(switched.os, 'windows');
     assert.equal(switched.metadata.platformVersion, '15.0.0', 'OS switches cannot inherit the old OS release');
     const runtime = buildFingerprint({ ...sanitizeProfile({ id: 'editor-random-version', name: 'Generated UA', os: 'Windows',
@@ -104,16 +149,16 @@ function main() {
     assert.equal(ua.parseChromeVersion(switched.userAgent).full, switched.chromeFull);
     assert.equal(switched.uaVersionRandomized, true);
     assertFingerprintConsistency(runtime);
-    const ios = buildEditorUa(engine, { profileId: 'iphone', os: 'iOS', random: true, chromeMajor: 148 });
+    const ios = await buildEditorUa(engine, { profileId: 'iphone', os: 'iOS', random: true, chromeMajor: 148 });
     assert.equal(ios.os, 'ios');
     assert.equal(ios.platform, 'iPhone');
     assert.equal(ios.clientHints.deviceModel, 'iPhone 18 Pro Max');
     assert.ok(publishedVersions.ios[156].includes(ios.chromeFull));
     assert.equal(ios.kernelBound, true);
-    const rerolled = buildEditorUa(engine, { profileId: 'old-iphone', os: 'iOS', osVersion: 'iOS 27',
+    const rerolled = await buildEditorUa(engine, { profileId: 'old-iphone', os: 'iOS', osVersion: 'iOS 27',
       fingerprintVersion: '3', resetFingerprint: true, random: true, chromeMajor: 148 });
     assert.match(rerolled.userAgent, /iPhone OS 27_0/);
-    assert.throws(() => buildEditorUa(engine, { os: 'Android', engine: 'firefox' }), { code: 'UA_PLATFORM_UNSUPPORTED' });
+    await assert.rejects(buildEditorUa(engine, { os: 'Android', engine: 'firefox' }), { code: 'UA_PLATFORM_UNSUPPORTED' });
   } finally { crypto.randomBytes = originalRandomBytes; }
 
   const platforms = [
@@ -184,4 +229,4 @@ function main() {
   assert.equal(input.fullVersionList[0].version, '159.0.1.2');
   console.log('PASS UA random contracts: saved OS/release, platform fields, deterministic draws, invalid pools and profile isolation');
 }
-try { main(); } catch (error) { console.error(error); process.exitCode = 1; }
+main().catch(error => { console.error(error); process.exitCode = 1; });

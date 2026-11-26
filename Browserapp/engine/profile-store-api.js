@@ -306,24 +306,32 @@ module.exports = {
     await clearBrowserCache(root);
   },
 
-  /** Export live cookies via CDP for cloud backup on close. */
-  async exportProfileCookies(connection) {
+  /** Return a complete live snapshot or an empty string when it cannot be read. */
+  async exportProfileCookies(connection, engine = 'chromium', timeout = 1500) {
     if (!connection?.command) return '';
     try {
-      const result = await connection.command('Storage.getCookies', {}, 15000);
-      const list = Array.isArray(result?.cookies) ? result.cookies : [];
-      const compact = list.slice(0, 5000).map((c) => ({
-        name: c.name,
-        value: c.value,
-        domain: c.domain,
-        path: c.path || '/',
-        secure: Boolean(c.secure),
-        httpOnly: Boolean(c.httpOnly),
-        sameSite: c.sameSite,
-        expires: c.expires,
-        ...(c.partitionKey ? { partitionKey: c.partitionKey } : {}),
-      }));
-      return JSON.stringify(compact);
+      const result = await connection.command(engine === 'firefox' ? 'storage.getCookies' : 'Storage.getCookies', {}, timeout);
+      if (!Array.isArray(result?.cookies) || result.cookies.length > 5000) return '';
+      const compact = result.cookies.filter(cookie => !cookie.partitionKeyOpaque).map((cookie) => {
+        const value = typeof cookie.value === 'string' ? cookie.value
+          : cookie.value?.type === 'base64' ? Buffer.from(cookie.value.value, 'base64').toString('latin1')
+          : cookie.value?.value;
+        if (typeof cookie.name !== 'string' || typeof value !== 'string' || typeof cookie.domain !== 'string')
+          throw new Error('Invalid cookie snapshot');
+        return {
+          name: cookie.name,
+          value,
+          domain: cookie.domain,
+          path: cookie.path || '/',
+          secure: Boolean(cookie.secure),
+          httpOnly: Boolean(cookie.httpOnly),
+          sameSite: cookie.sameSite,
+          expires: cookie.expires ?? cookie.expiry,
+          ...(cookie.partitionKey ? { partitionKey: cookie.partitionKey } : {}),
+        };
+      });
+      const snapshot = JSON.stringify(compact);
+      return snapshot.length <= 500000 ? snapshot : '';
     } catch (_) {
       return '';
     }

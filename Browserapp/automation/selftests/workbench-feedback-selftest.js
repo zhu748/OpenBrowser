@@ -41,6 +41,24 @@ async function main() {
   }
 
   const draft = await import('../../rebuild/workbench-fingerprint-draft.mjs');
+  const instance = { id: 'old-window', windowId: 'old-window', fingerprintSeed: 'old-seed',
+    os: 'Linux', coreType: 'Chrome', coreVersion: '159', userAgent: 'custom UA', _custom_ua: true,
+    webGLInfo: 2, webGLRender: 'custom GPU', macAddr: '02:11:22:33:44:55', hardwareConcurrent: '16',
+    font: 'Generated Font', fontList: ['Generated Font'],
+    _fingerprintDraft: { generated: true, userAgent: 'custom UA', generatedHardware: {
+      webGLRender: 'custom GPU', macAddr: '02:11:22:33:44:55', hardwareConcurrent: '8',
+    }, generatedFonts: 'Generated Font' } };
+  const settings = draft.profileTemplateSettings(instance);
+  assert.deepEqual(settings, { os: 'Linux', coreType: 'Chrome', coreVersion: '159', userAgent: 'custom UA', _custom_ua: true,
+    webGLInfo: 2, webGLRender: 'custom GPU', hardwareConcurrent: '16' });
+  assert.equal(draft.profileTemplateSettings({ ...instance, _custom_ua: false }).userAgent, undefined);
+  assert.ok(instance._fingerprintDraft && instance.font);
+  const previewPayload = draft.fingerprintPreviewInput({ ...instance, cookie: 'stored', proxyInfoList: [{ host: 'example.test' }],
+    fontType: true, openBattery: true, level: 0.75 });
+  assert.deepEqual([previewPayload.userAgent, previewPayload.webGLRender, previewPayload.hardwareConcurrent, previewPayload.macAddr],
+    ['custom UA', 'custom GPU', '16', '']);
+  assert.deepEqual([previewPayload.openBattery, previewPayload.level], [true, 0.75]);
+  for (const field of ['font', 'fontList', '_fingerprintDraft', 'cookie', 'proxyInfoList']) assert.ok(!Object.hasOwn(previewPayload, field));
   const groups = [[{ name: 'os', value: 'Windows' }, { name: 'coreType', value: 'Chrome' },
     { name: 'coreVersion', value: '159' }, { name: 'userAgent', value: 'Chrome/159.0.0.0' }]];
   const read = value => draft.serializeFingerprintDraft(value, Object.fromEntries(value[0].map(row => [row.name, row.value])));
@@ -138,6 +156,38 @@ async function main() {
   const mappedIdentity = fromRoxy(editedIdentity);
   assert.equal(mappedIdentity.privacy.deviceName, firstDevice.deviceName);
   assert.equal(mappedIdentity.privacy.mac, '');
+
+  const controls = [[{ name: 'os', value: 'Windows' }, { name: 'coreType', value: 'Chrome' },
+    { name: 'webGLInfo', value: 2 }, { name: 'webGLRender', value: 'Manual GPU' },
+    { name: 'userAgent', value: 'Chrome/159.0.0.0' }, { name: 'hardwareConcurrent', value: '32' }]];
+  const accepted = { ...beforeDevice, seed: 'accepted-seed', generatedHardware: { hardwareConcurrent: '8' }, generatedFonts: 'OS Fonts' };
+  let releaseSample;
+  const requests = [];
+  const reroll = draft.refreshFingerprintDraft(controls, { read, find, apply,
+    request: payload => {
+      requests.push(payload);
+      if (requests.length === 1) return new Promise(resolve => { releaseSample = resolve; });
+      return [{ userAgent: accepted.userAgent, _fingerprintDraft: accepted, webGLRender: '', hardwareConcurrent: '8', font: 'OS Fonts' }];
+    } });
+  find(controls[0], 'webGLInfo').value = 0;
+  find(controls[0], 'hardwareConcurrent').value = '';
+  releaseSample([{ userAgent: beforeDevice.userAgent, _fingerprintDraft: beforeDevice, webGLRender: 'Stale GPU', hardwareConcurrent: '32' }]);
+  const [merged] = await reroll;
+  assert.equal(requests.length, 2);
+  assert.deepEqual([requests[1].webGLInfo, requests[1].hardwareConcurrent], [0, '']);
+  assert.equal(find(controls[0], 'webGLRender').value, 'Manual GPU');
+  assert.equal(merged.webGLRender, undefined, 'the save merge also keeps hidden manual GPU values');
+  assert.equal(merged.font, undefined, 'generated font lists remain derived from the selected OS');
+  assert.equal(merged._fingerprintDraft.seed, accepted.seed);
+  let rejectOldControls;
+  const retry = draft.refreshFingerprintDraft(controls, { read, find, apply,
+    request: payload => payload.webGLInfo === 0 ? new Promise((_resolve, reject) => { rejectOldControls = reject; })
+      : [{ userAgent: accepted.userAgent, _fingerprintDraft: accepted, webGLRender: 'Automatic GPU' }] });
+  find(controls[0], 'webGLInfo').value = 1;
+  rejectOldControls(Error('old values were rejected'));
+  await retry;
+  assert.equal(find(controls[0], 'webGLRender').value, 'Automatic GPU');
+  assert.equal(find(controls[0], 'userAgent').invalid, false);
 
   const { createNetworkIndicator } = await import('../../rebuild/workbench-network.mjs');
   let mounted, calls = 0;

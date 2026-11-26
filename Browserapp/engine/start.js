@@ -25,7 +25,7 @@ const { acquireProfileLock, updateProfileLock, validateProfileRootSecure } = req
 const { fingerprintForNativeKernelInject, isOpenBrowser148, writeOpenBrowserKernelInit } = require('../automation/kernel-init-sync');
 const { resolveProfileTimezone } = require('../automation/locale-from-country');
 const { mergeLoadExtensionArgs } = require('../automation/protocol/app-center-protocol');
-const { portConnection, reconcileOnConnection } = require('./extension-pipe');
+const { portConnection, reconcileOnConnection, isExtensionsCdpUnavailable } = require('./extension-pipe');
 const { appendDiagnosticOutput, formatBrowserStartupError, isChildExited, removeSingletonFiles, writeBrowserStartupDiagnostic } = require('./index');
 const { prepareLaunchProfile, createStartupResources, reportPlatformPreflight } = require('./launch-preparation');
 const { spawn } = require('child_process');
@@ -43,7 +43,8 @@ const APP_ROOT = path.join(__dirname, '..');
 // Proxy support is a required engine capability; preserve dependency load errors.
 const { startAuthenticatedProxy, needsProxyBridge, chromeProxyEndpoint } = require('../proxy-forwarder');
 
-const { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed } = require('./launch-profile');
+const { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed, prepareLaunchFingerprintSeed, readKernelVersion } = require('./launch-profile');
+const { assertBrowserKernelMajor } = require('../automation/kernel-versions');
 const { applyDefaultSearchEngine, reportPreferencesReadError, clearProfileLaunchData, clearLaunchDataTargets } = require('./launch-preferences');
 const { isValidIanaTimezone, extractTimezoneFromArgs, hostScreenSummary, windowPositionArg } = require('./launch-display');
 
@@ -102,6 +103,9 @@ module.exports = {
     // Explicit 'chromium': this profile must not silently fall into a Firefox
     // kernel even when a Firefox pin exists.
     browser = this.chooseBrowser(profile, 'chromium', lifecycleGeneration);
+    browser = { ...browser, version: await readKernelVersion(this, browser) };
+    this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+    assertLaunchProfileCurrent();
     root = this.profileRoot(profile.id);
     startupResources.root = root;
     const rootCheck = await validateProfileRootSecure(this.profileDataRootPath, root, profile.id, { create: true });
@@ -114,25 +118,35 @@ module.exports = {
     startupResources.profileLock = profileLock;
     startupResources.lifecycleGeneration = lifecycleGeneration;
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+    assertLaunchProfileCurrent = await prepareLaunchFingerprintSeed(this, profile, assertLaunchProfileCurrent);
+    this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+    const pageNetwork = this.networkInfo.get(profile.id) || {};
+    const explicitTimezone = extractTimezoneFromArgs(profile.privacy.customArgs?.split(/\s+/));
+    const effectiveTimezone = isValidIanaTimezone(explicitTimezone)
+      ? explicitTimezone : resolveProfileTimezone(profile, pageNetwork);
+    // Identity refresh and sampling stability are independent settings.
+    const allowSeedRefresh = profile.privacy.refreshFingerprintOnStart;
+    const fingerprint = buildFingerprint({
+      ...profile,
+      fingerprintLaunchSeed: allowSeedRefresh ? crypto.randomBytes(16).toString('hex') : '',
+      kernelVersion: browser.version,
+      exitLatitude: profile.exitLatitude ?? pageNetwork.latitude,
+      exitLongitude: profile.exitLongitude ?? pageNetwork.longitude,
+      hostScreen: hostScreenSummary(),
+    }, { timezone: effectiveTimezone || null });
+    assertFingerprintConsistency(fingerprint);
+
+    // Validate the fingerprint before applying any profile retention settings.
     recoverControlColor = await require('../automation/sync/master-window-color').needsStartupRecovery(root);
     restoreSession = profile.advanced.tabMode === 'restore' || profile.advanced.restoreSession;
     // Parallelized (independent IO overlaps; Preferences writers stay serialized). See method.
     await this.prepareProfileFilesForStart(root, profile, restoreSession);
-    // F-7: the post-prep chain used to run four independent async steps
-    // strictly in sequence (~4 round trips of fs IO). clearProfileLaunchData
-    // (optional cookie/local-storage/history removal), applyDefaultSearchEngine (Preferences write)
-    // and ensureLegacyFingerprintSeed (one-time seed migration) touch
-    // disjoint files, so they overlap; removeSingletonFiles already ran
-    // inside prepareProfileFilesForStart and ran again here only as an
-    // afterguard, so it joins the same batch. The clearedLaunchData event
-    // still fires before spawn, and buildFingerprint below waits on the
-    // batch before reading anything these writers own.
+    // These launch operations write disjoint files. Drain them before
+    // releasing the lock even if one fails.
     assertLaunchProfileCurrent();
     const postPrepJobs = [];
     let launchDataCleared;
     try {
-      postPrepJobs.push(ensureLegacyFingerprintSeed(this, profile));
-      assertLaunchProfileCurrent = profileWriteGuard(this, profile.id);
       launchDataCleared = clearProfileLaunchData(root, profile);
       postPrepJobs.push(launchDataCleared);
       if (profile.privacy?.searchEngine) {
@@ -156,21 +170,6 @@ module.exports = {
     if (clearedLaunchData.length) {
       this.emit({ type: 'profile-launch-data-cleared', id: profile.id, removed: clearedLaunchData });
     }
-    const pageNetwork = this.networkInfo.get(profile.id) || {};
-    const explicitTimezone = extractTimezoneFromArgs(profile.privacy.customArgs?.split(/\s+/));
-    const effectiveTimezone = isValidIanaTimezone(explicitTimezone)
-      ? explicitTimezone : resolveProfileTimezone(profile, pageNetwork);
-    // Explicit identity refresh is independent of per-site sampling stability.
-    const allowSeedRefresh = profile.privacy.refreshFingerprintOnStart;
-    const fingerprint = buildFingerprint({
-      ...profile,
-      fingerprintLaunchSeed: allowSeedRefresh ? crypto.randomBytes(16).toString('hex') : '',
-      kernelVersion: browser.version,
-      exitLatitude: profile.exitLatitude ?? pageNetwork.latitude,
-      exitLongitude: profile.exitLongitude ?? pageNetwork.longitude,
-      hostScreen: hostScreenSummary(),
-    }, { timezone: effectiveTimezone || null });
-    assertFingerprintConsistency(fingerprint);
     let customStartUrls = this.resolveStartupUrls(profile);
     if (restoreSession) {
       const restoredUrls = await readDeferredSessionUrls(root);
@@ -405,13 +404,16 @@ module.exports = {
       }
       throw new Error(formatBrowserStartupError(error, child, diagnostic));
     }
-    if (profile.cookies && profile.advanced.saveCookies) { try { await this.importProfileCookies(connection, profile.cookies); } catch (error) { this.emit({ type: 'sync-error', action: 'import-cookies', id: profile.id, message: 'Cookie 导入失败：' + error.message }); } }
+    const browserVersion = await connection.command('Browser.getVersion', {}, 4000);
+    this.assertStartGenerationActive(profile.id, lifecycleGeneration);
+    assertBrowserKernelMajor(browser.version, browserVersion?.product);
+    if (profile.cookies && profile.advanced.saveCookies && !profile.advanced.clearCookiesOnStart) { try { await this.importProfileCookies(connection, profile.cookies); } catch (error) { this.emit({ type: 'sync-error', action: 'import-cookies', id: profile.id, message: 'Cookie 导入失败：' + error.message }); } }
     let reconciled;
     try {
       const managedPaths = [...this.extensions.values()].map((item) => item.path).filter(Boolean);
       reconciled = await reconcileOnConnection(connection, extensions, managedPaths);
       if (reconciled?.skipped) {
-        // Expected on openbrowser-148: not an error. Extensions still load via --load-extension.
+        // Some kernels load extensions only via --load-extension.
         this.emit({
           type: 'status',
           action: 'extensions-reconcile-skipped',
@@ -422,9 +424,8 @@ module.exports = {
         });
       }
     } catch (error) {
-      // OpenBrowser 148 kernels may lack Extensions.* CDP — do not kill the browser.
       const msg = String(error && error.message || error || '');
-      if (/not available|unknown method|was not found|not found|unsupported/i.test(msg)) {
+      if (isExtensionsCdpUnavailable(msg)) {
         reconciled = { installed: extensions, extensions: [], skipped: true, reason: msg };
         this.emit({
           type: 'status',

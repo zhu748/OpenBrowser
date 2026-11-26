@@ -249,7 +249,7 @@ const methods = {
       .filter(Boolean);
     return {
       rows: await Promise.all(
-        ids.map((id) => request("profiles:read", { id })),
+        ids.map((id) => request("profiles:read", { id, hardwarePreview: p.hardwarePreview === true })),
       ),
       total: ids.length,
     };

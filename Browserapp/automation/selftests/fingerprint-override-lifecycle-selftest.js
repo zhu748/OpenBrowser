@@ -35,21 +35,30 @@ async function main() {
     const baselineZone = await native('Intl.DateTimeFormat().resolvedOptions().timeZone');
     const customZone = baselineZone === 'America/New_York' ? 'Asia/Tokyo' : 'America/New_York';
     const custom = { ...base, privacy: { ...base.privacy, timezoneMode: 'custom', timezone: customZone,
-      geoMode: 'custom', latitude: 12, longitude: 34, geoPermission: 'allow' } };
+      geoMode: 'custom', latitude: 12, longitude: 34, geoPermission: 'allow',
+      fingerprint: { screenWidth: 1280, screenHeight: 800, availLeft: 40, availTop: 55, devicePixelRatio: 4.5 } } };
     const customFp = buildFingerprint({ ...custom, kernelVersion: browser.version });
     const invoke = (method, params) => method.startsWith('Browser.')
       ? browserConnection.command(method, params) : page.command(method, params);
     const options = { applyKey: 'native-page', registrationOwner: page };
     await applyFingerprintToTab(invoke, null, customFp, custom, options);
     assert.equal(await native('Intl.DateTimeFormat().resolvedOptions().timeZone'), customZone);
+    assert.equal(await native('devicePixelRatio'), 4.5);
+    assert.equal(await native('matchMedia("(resolution: 4.5dppx)").matches'), true);
+    const workArea = await page.command('Runtime.evaluate', { returnByValue: true,
+      expression: '[screen.availLeft, screen.availTop, screen.availWidth, screen.availHeight]' });
+    assert.deepEqual(workArea.result.value, [40, 55, 1240, 745]);
     const coords = 'new Promise((resolve,reject)=>navigator.geolocation.getCurrentPosition(p=>resolve([p.coords.latitude,p.coords.longitude]),e=>reject(Error(e.message)),{maximumAge:0,timeout:3000}))';
     assert.deepEqual(await native(coords), [12, 34]);
     await applyFingerprintToTab(invoke, null, customFp, { ...custom, privacy: { ...custom.privacy, latitude: 15 } }, options);
     assert.deepEqual(await native(coords), [15, 34], 'profile-only coordinate changes reach native Chromium');
+    const next = { ...custom, privacy: { ...custom.privacy, timezone: 'Pacific/Kiritimati' } };
+    await applyFingerprintToTab(invoke, null, buildFingerprint({ ...next, kernelVersion: browser.version }), next, options);
+    assert.equal(await native('Intl.DateTimeFormat().resolvedOptions().timeZone'), next.privacy.timezone);
     await applyFingerprintToTab(invoke, null, fp, base, options);
     assert.equal(await native('Intl.DateTimeFormat().resolvedOptions().timeZone'), baselineZone, 'real timezone clears the prior native override');
     assert.equal(await native('navigator.permissions.query({name:"geolocation"}).then(p=>p.state)'), 'prompt', 'automatic grants do not survive switching to prompt');
-    console.log('FINGERPRINT_OVERRIDE_LIFECYCLE_SELFTEST OK (native coordinates, source reuse, timezone reset and permission reset)');
+    console.log('FINGERPRINT_OVERRIDE_LIFECYCLE_SELFTEST OK (display geometry and CSS resolution, native coordinates, timezone changes and permission reset)');
   } finally {
     page?.close(); browserConnection?.close(); await run?.close();
     server.closeAllConnections(); await new Promise((resolve) => server.close(resolve));

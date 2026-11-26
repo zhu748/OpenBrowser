@@ -2,10 +2,8 @@
 
 // Guards the re-inject contract of the runtime fingerprint pass.
 //
-// The injector wraps the live readers, so running an identical config over the same document twice
-// adds a second layer of noise and moves canvas / clientRects while the profile is already in use.
-// The launch sequence drives two passes back to back (before and after the start page) and the watch
-// loop keeps sweeping, so those repeats must not reach the injector:
+// The launch sequence and periodic watch reuse successful delivery state and
+// should avoid unnecessary protocol calls:
 //   1. same config + recorded hash  -> no inject at all
 //   2. same config, no recorded hash -> still trusted (callers that do not track a hash)
 //   3. different config              -> every live tab is re-applied, then tracked stays quiet
@@ -49,13 +47,20 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
     { id: 'T2', url: 'https://example.com/b', webSocketDebuggerUrl: 'ws://127.0.0.1:9222/2' },
   ];
   cdp.tabs = async () => tabs;
-  cdp.call = async () => { const fp = injectCalls.at(-1)?.[2] || {}; return { result: { value: { userAgent: fp.userAgent, platform: fp.platform, hardwareConcurrency: fp.hardwareConcurrency } } }; };
+  let expectedFingerprint;
+  cdp.call = async () => {
+    const { userAgent, platform, hardwareConcurrency } = expectedFingerprint;
+    return { result: { value: { userAgent, platform, hardwareConcurrency } } };
+  };
 
   cdp.connect = async (url) => ({ command: (method, params) => cdp.call(url, method, params), close() {} });
 
-  const run = (fingerprint, options) => BrowserEngine.prototype.applyRuntimeSettings.call(
-    { networkInfo: new Map() }, 9222, { id: 'reinject', advanced: {}, privacy: {} }, fingerprint, options,
-  );
+  const run = (fingerprint, options) => {
+    expectedFingerprint = fingerprint;
+    return BrowserEngine.prototype.applyRuntimeSettings.call(
+      { networkInfo: new Map() }, 9222, { id: 'reinject', advanced: {}, privacy: {} }, fingerprint, options,
+    );
+  };
 
   try {
     const tracked = {};
@@ -106,21 +111,31 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
     ok('the re-applied config is trusted on the next sweep', injectCalls.length === 0);
 
     injectCalls.length = 0;
-    const pendingState = { targetId: 'T1', ready: false, reason: null };
-    const pendingOwner = { fingerprintSessionStates: new Map([['pending-session', pendingState]]) };
+    let attachedProbes = 0;
+    const attachedConnection = { command(method, params, { sessionId }) {
+      assert.equal(sessionId, 'attached');
+      if (method === 'Runtime.evaluate') attachedProbes += 1;
+      return cdp.call(tabs[0].webSocketDebuggerUrl, method, params);
+    } };
+    const pendingState = { targetId: 'T1', connection: attachedConnection, ready: false };
+    const pendingOwner = { workerFingerprintConnection: attachedConnection,
+      fingerprintSessionStates: new Map([['attached', pendingState]]), fingerprintTargetSessions: new Map() };
     const ownedApplied = new Set(['T2']);
     await run(fpB, { appliedTargetIds: ownedApplied, trackOn: pendingOwner, phase: 'watch-ensure' });
     ok('watch does not compete with the auto-attach owner of a paused document', injectCalls.length === 0);
     ok('pending document remains unverified in the applied set', !ownedApplied.has('T1'));
     pendingState.ready = true;
-    await run(fpB, { appliedTargetIds: ownedApplied, trackOn: pendingOwner, phase: 'watch-ensure' });
-    ok('a ready target still receives fallback injection and verification when needed', injectCalls.length === 1 && ownedApplied.has('T1'));
+    pendingOwner.fingerprintTargetSessions.set('attached', { targetId: 'T1', type: 'page' });
+    ownedApplied.add('T1');
+    await run(fpB, { appliedTargetIds: ownedApplied, trackOn: pendingOwner, phase: 'watch-ensure', verifyApplied: true });
+    ok('a ready target is rechecked through its own session without a second injection', injectCalls.length === 0 && attachedProbes === 1);
 
     injectCalls.length = 0;
-    const laterState = { targetId: 'T1', ready: true, reason: null };
-    const laterOwner = { fingerprintSessionStates: new Map([['late-session', laterState]]) };
+    const laterState = { targetId: 'T1', ready: false };
+    const laterOwner = { workerFingerprintConnection: attachedConnection,
+      fingerprintSessionStates: new Map([['late-session', laterState]]) };
     const steadyTabs = cdp.tabs;
-    cdp.tabs = async () => { queueMicrotask(() => queueMicrotask(() => { laterState.ready = false; }));return tabs; };
+    cdp.tabs = async () => { queueMicrotask(() => queueMicrotask(() => { laterState.connection = attachedConnection; }));return tabs; };
     try {
       await run(fpB, { appliedTargetIds: new Set(['T2']), trackOn: laterOwner, phase: 'watch-ensure' });
       ok('an attach owner appearing after the target snapshot also prevents competing injection', injectCalls.length === 0);
@@ -130,8 +145,11 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
     cdp.call = async (url, method, ...args) => { if (method === 'Runtime.evaluate') throw Error('intentional live delivery failure');return healthyCall(url, method, ...args); };
     try {
       for (const failed of [false, true]) {
-        const state = { targetId: 'T1', ready: !failed, reason: failed ? 'failed' : null };
-        await assert.rejects(run(fpB, { appliedTargetIds: new Set(['T2']), trackOn: { fingerprintSessionStates: new Map([['state', state]]) }, phase: 'watch-ensure' }), /intentional live delivery failure/);
+        const state = { targetId: 'T1', connection: attachedConnection, ready: !failed, reason: failed ? 'failed' : null };
+        const trackOn = { workerFingerprintConnection: attachedConnection,
+          fingerprintSessionStates: new Map([['attached', state]]),
+          fingerprintTargetSessions: new Map(failed ? [] : [['attached', { targetId: 'T1', type: 'page' }]]) };
+        await assert.rejects(run(fpB, { appliedTargetIds: new Set(['T2']), trackOn, phase: 'watch-ensure' }), /intentional live delivery failure/);
         ok(failed ? 'a failed attach owner cannot suppress a real delivery error' : 'real errors on ready live documents still reject', true);
       }
     } finally { cdp.call = healthyCall; }

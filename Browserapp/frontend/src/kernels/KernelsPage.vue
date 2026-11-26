@@ -8,6 +8,8 @@ const rows = ref<KernelRow[]>([]);
 const loaded = ref(false);
 const family = ref<Family>('chromium');
 const versions = ref<string[]>([]);
+const historicalVersions = ref<string[]>([]);
+const showHistorical = ref(false);
 const version = ref('');
 const custom = ref('');
 const busy = ref<'read' | 'change' | 'download' | null>(null);
@@ -27,6 +29,8 @@ watch(family, () => {
   finding.value = false;
   catalogError.value = '';
   versions.value = [];
+  historicalVersions.value = [];
+  showHistorical.value = false;
   version.value = '';
 }, { flush: 'sync' });
 
@@ -38,14 +42,26 @@ async function findVersions() {
   try {
     const result = await actions.versions(family.value);
     if (active && id === catalogRequest) {
-      versions.value = result;
-      version.value = result[0] ?? '';
-      if (!result.length) catalogError.value = '没有可下载的版本';
+      versions.value = result.versions;
+      historicalVersions.value = result.historicalVersions;
+      showHistorical.value = showHistorical.value && historicalVersions.value.length > 0;
+      if (!versions.value.includes(version.value) &&
+        !(showHistorical.value && historicalVersions.value.includes(version.value))) {
+        version.value = versions.value[0] ?? '';
+      }
+      if (!versions.value.length) catalogError.value = '没有可下载的版本';
     }
   } catch (failure) {
     if (active && id === catalogRequest) catalogError.value = message(failure);
   } finally {
     if (active && id === catalogRequest) finding.value = false;
+  }
+}
+
+function toggleHistorical() {
+  showHistorical.value = !showHistorical.value;
+  if (!showHistorical.value && historicalVersions.value.includes(version.value)) {
+    version.value = versions.value[0] ?? '';
   }
 }
 
@@ -159,7 +175,14 @@ onBeforeUnmount(() => { active = false; unsubscribe?.(); });
         <button type="button" :disabled="finding || !!busy" @click="findVersions">获取可下载版本</button>
         <select v-model="version" aria-label="内核版本" :disabled="finding || !!busy || !versions.length">
           <option v-for="value in versions" :key="value" :value="value">{{ value }}</option>
+          <optgroup v-if="showHistorical" label="历史版本">
+            <option v-for="value in historicalVersions" :key="value" :value="value">{{ value }}</option>
+          </optgroup>
         </select>
+        <button v-if="historicalVersions.length" type="button" :disabled="finding || !!busy"
+          :aria-expanded="showHistorical" @click="toggleHistorical">
+          {{ showHistorical ? '收起历史版本' : `显示历史版本（${historicalVersions.length}）` }}
+        </button>
         <button type="button" :disabled="!!busy || finding || !version" @click="change('download', () => actions.install(family, version), '所选内核已安装')">安装所选版本</button>
       </div>
       <p v-if="catalogError" class="kernel-alert" role="alert">{{ catalogError }}</p>

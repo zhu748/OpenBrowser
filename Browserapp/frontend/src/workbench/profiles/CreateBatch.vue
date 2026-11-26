@@ -11,7 +11,7 @@ import { t as bindMode } from './account-2bDq0W_G.js';
 import { t as NumberInput } from './rx-input-number-EcSY6ALQ.js';
 import { n as ProfileForm } from './useAsyncGate-D7VA7DLY.js';
 import { r as Fingerprint, t as createAccordions } from './createDefaultAccordions-CO1KkbkO.js';
-import { t as generateFingerprints } from './form-inputs-CnnG6T0O.js';
+import { fingerprintPreviewInput, requireFingerprintPreviewRows } from './workbench-fingerprint-draft.js';
 import { t as ProfileMetadata } from './mate-group-CBm6kY0g.js';
 
 const props = defineProps({ shared: { type: Object, required: true } });
@@ -40,13 +40,11 @@ async function create() {
     const name = getWindowName(findField(inputsGroup.value[0] ?? [], 'windowName'));
     if (name && !hasName(params.windowName) && !hasName(params.windowNamePrefix)) params.windowNamePrefix = params.windowName = name;
     loading.value = true;
-    const fingerprints = await generateFingerprints(previewInputs.value, { count: params.createCount, preview: false });
+    const fingerprints = await globalThis.electronAPI.send('util:genRandomFingerprint', fingerprintPreviewInput(params), params.createCount);
     params.proxyInfoList = [...proxies, ...Array.from({ length: missingProxies }, () => ({ id: 0, proxyCategory: 'noproxy' }))];
-    params.fingerDetail = fingerprints.map(row => ({
+    params.fingerDetail = requireFingerprintPreviewRows(fingerprints, params.createCount).map(row => ({
       ...row,
-      userAgent: params._custom_ua ? params.userAgent : row.userAgent,
-      webGLManufacturer: params.webGLInfo === 2 ? params.webGLManufacturer : row.webGLManufacturer,
-      webGLRender: params.webGLInfo === 2 ? params.webGLRender : row.webGLRender,
+      ...(params.webGLInfo === 2 ? { webGLManufacturer: params.webGLManufacturer, webGLRender: params.webGLRender } : {}),
       hardwareConcurrent: params.hardwareConcurrent || row.hardwareConcurrent,
       deviceMemory: params.deviceMemory || row.deviceMemory,
     }));

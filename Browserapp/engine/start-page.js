@@ -16,6 +16,8 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 const { profileWriteGuard } = require('./profile-write-guard');
+const { readKernelVersion } = require('./launch-profile');
+const { hostScreenSummary } = require('./launch-display');
 const { normalizeCoordinates } = require('../shared/profile-values');
 
 // Proxy support is a required engine capability; preserve dependency load errors.
@@ -315,22 +317,26 @@ module.exports = {
       : (profile.privacy?.timezoneMode === 'real' ? '' : (
         (profile.privacy?.timezoneMode === 'custom' ? profile.privacy.timezone : '')
         || profile.exitTimezone || pageNetwork?.timezone || ''));
-    const fpForStart = fingerprintOverride || (() => {
+    let fpForStart = fingerprintOverride;
+    if (!fpForStart) {
       try {
-        if (profile.engine === 'firefox') {
-          return require('../automation/firefox-fingerprint').buildFirefoxFingerprint(profile, this.chooseBrowser(profile, 'firefox').version);
-        }
-        return buildFingerprint({
+        const engine = profile.engine === 'firefox' ? 'firefox' : 'chromium';
+        const kernelVersion = await readKernelVersion(this, this.chooseBrowser(profile, engine));
+        const configured = {
           ...profile,
-          kernelVersion: this.chooseBrowser(profile, 'chromium').version,
+          kernelVersion,
+          hostScreen: profile.hostScreen ?? hostScreenSummary(),
           exitTimezone: timezone,
           exitLatitude: pageNetwork?.latitude ?? profile.exitLatitude,
           exitLongitude: pageNetwork?.longitude ?? profile.exitLongitude,
-        });
+        };
+        fpForStart = engine === 'firefox'
+          ? require('../automation/firefox-fingerprint').buildFirefoxFingerprint(configured, kernelVersion)
+          : buildFingerprint(configured);
       } catch (_) {
-        return null;
+        fpForStart = null;
       }
-    })();
+    }
     const uaFromFp = fpForStart?.userAgent || profile.userAgent || '';
     try {
       const server = await this.ensureStartPage();

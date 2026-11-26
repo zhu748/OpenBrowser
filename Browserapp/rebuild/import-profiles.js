@@ -41,6 +41,10 @@ function importRows(payload) {
         proxyCategory: "noproxy",
       };
       value.useLatestCore = !row.coreVersion;
+      // A blank file cell should leave the generated UA and its metadata intact.
+      const ua = String(row.userAgent ?? '').trim();
+      if (ua) value.userAgent = ua;
+      else delete value.userAgent;
       delete value.id;
       delete value.dirId;
       delete value.windowId;

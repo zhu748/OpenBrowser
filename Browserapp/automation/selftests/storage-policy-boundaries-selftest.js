@@ -115,13 +115,13 @@ test('Firefox next-start retention removes IDB before launch even after an uncle
   await f.write(ff + 'ls/data'); await f.write(ff + 'idb/data'); await f.write(keyDb);
   // Stop at the first boundary AFTER file preparation, strictly before browser or proxy setup.
   const boundary = new Error('synthetic pre-spawn boundary');
-  engine.networkInfo.get = () => { throw boundary; };
+  engine.resolveStartupUrls = () => { throw boundary; };
   engine._platformPreflightDone = true;
   engine.prepareProfileProxyForStart = async p => p;
   engine.ensureExitNetworkForLocale = async () => {};
   engine.applyResolvedLocale = p => p;
   engine.persist = async () => {};
-  engine.chooseBrowser = () => ({ name: 'Firefox fixture', path: path.join(f.tmp, 'never-executed') });
+  engine.chooseBrowser = () => ({ name: 'Firefox fixture', path: path.join(f.tmp, 'never-executed'), version: '156.0' });
   const previous = process.env.OPENBROWSER_RESOURCE_GATE;
   process.env.OPENBROWSER_RESOURCE_GATE = 'off';
   try {

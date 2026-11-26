@@ -28,7 +28,17 @@ function hostScreenSummary() {
       width >= 640 &&
       height >= 480
     ) {
-      return { width, height };
+      const result = { width, height, devicePixelRatio: display.scaleFactor };
+      const { bounds, workArea } = display;
+      if (workArea && workArea.width > 0 && workArea.height > 0) {
+        Object.assign(result, {
+          availLeft: workArea.x - bounds.x,
+          availTop: workArea.y - bounds.y,
+          availWidth: workArea.width,
+          availHeight: workArea.height,
+        });
+      }
+      return result;
     }
   } catch (_) {}
   return null;

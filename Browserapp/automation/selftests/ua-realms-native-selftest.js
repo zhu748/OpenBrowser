@@ -89,7 +89,7 @@ async function main() {
   const origin = 'http://127.0.0.1:' + server.address().port;
   let reference;
   try {
-    for (const os of [null, 'Windows', 'macos_arm', 'Linux', 'Android', 'Windows full UA', 'Windows generated UA']) {
+    for (const os of [null, 'Windows', 'macos_arm', 'Linux', 'Android', 'Windows full UA', 'Windows generated UA', 'Windows fallback UA']) {
       const persona = h.buildPersona('ua-contract-' + (os || 'baseline').replaceAll(' ', '-'), {
         os: os?.startsWith('Windows') ? 'Windows' : os || 'Windows', kernelVersion: browser.version, fingerprintVersion: CURRENT_FINGERPRINT_VERSION,
         seed: os === 'Windows' ? 'catalog-v4-96' : undefined,
@@ -109,11 +109,21 @@ async function main() {
         persona.fingerprint = buildFingerprint({ ...persona.profile, kernelVersion: browser.version });
         assert.ok(persona.fingerprint.userAgent.includes('Chrome/' + browser.version));
       }
-      if (os === 'Windows generated UA') {
-        const versions = require('../data/chrome-release-versions.json').versions.windows[browser.version.split('.')[0]] || [];
-        const previous = versions.includes(browser.version) ? browser.version : versions[0];
-        const generated = buildEditorUa({ profiles: new Map(), chooseBrowser: () => browser },
-          { os: 'Windows', random: true, previousUserAgent: `Chrome/${previous}` });
+      if (os === 'Windows generated UA' || os === 'Windows fallback UA') {
+        const catalog = require('../data/chrome-release-versions.json').versions.windows;
+        const major = browser.version.split('.')[0];
+        const published = catalog[major];
+        const fallback = os === 'Windows fallback UA';
+        const versions = fallback ? [] : published || [];
+        const previous = versions.includes(browser.version) ? browser.version : versions[0] || browser.version;
+        if (fallback) delete catalog[major];
+        let generated;
+        try {
+          generated = await buildEditorUa({ profiles: new Map(), chooseBrowser: () => browser },
+            { os: 'Windows', random: true, previousUserAgent: `Chrome/${previous}` });
+        } finally {
+          if (fallback && published) catalog[major] = published;
+        }
         persona.profile.userAgent = generated.userAgent;
         Object.assign(persona.profile.privacy.fingerprint, { uaGenerated: generated.kernelBound, uaReduced: generated.uaReduced,
           uaVersionRandomized: generated.uaVersionRandomized, clientHints: generated.clientHints });
@@ -123,8 +133,13 @@ async function main() {
         assert.equal(persona.fingerprint.userAgent, generated.userAgent);
         assert.equal(persona.fingerprint.userAgentMetadata.fullVersion, generated.chromeFull);
         assert.deepEqual([persona.fingerprint.hardwareConcurrency, persona.fingerprint.deviceMemory], [32, 0.5]);
-        assert.ok((versions.length ? versions : [browser.version]).includes(generated.chromeFull));
-        if (versions.length > 1) assert.notEqual(generated.chromeFull, previous);
+        if (versions.length) assert.ok(versions.includes(generated.chromeFull));
+        else {
+          const actual = browser.version.split('.'), selected = generated.chromeFull.split('.');
+          assert.deepEqual(selected.slice(0, 3), actual.slice(0, 3));
+          assert.ok(Math.abs(Number(selected[3]) - Number(actual[3])) <= 8);
+        }
+        if (versions.length !== 1) assert.notEqual(generated.chromeFull, previous);
       }
       const run = await h.launchPersonaBrowser(browser, persona, { injectFingerprint: os !== null });
       let page;

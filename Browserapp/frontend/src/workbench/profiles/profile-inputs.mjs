@@ -43,9 +43,11 @@ import {
 
 const user = useUser();
 const latestKernel = '__useLatestCore__';
+const webGlFields = ['webGLManufacturer', 'webGLRender'];
+const shuffleIcon = 'base/rx_ic_shuffle';
 const previewFieldNames = [
   'os', 'osVersion', 'coreType', 'coreVersion', 'userAgent', 'fontType',
-  'canvas', 'webGL', 'webGLInfo', 'webGLManufacturer', 'webGLRender', 'audioContext', 'speechVoices', 'clientRects',
+  'canvas', 'webGL', 'webGLInfo', 'webGLManufacturer', 'webGLRender', 'webGpu', 'audioContext', 'speechVoices', 'clientRects',
   'macInfo', 'macAddr', 'hardwareConcurrent', 'deviceMemory', 'deviceInfo', 'deviceNameSwitch', 'deviceName',
   'position', 'isPositionBaseIp', 'latitude', 'longitude', 'precisionPos',
   'resolutionType', 'resolution',
@@ -53,6 +55,13 @@ const previewFieldNames = [
 
 function readPreviewInputs(fields) {
   return readFields(findFields(fields, previewFieldNames), {}, { validate: false });
+}
+
+function updateAutomaticHardware(fields, row) {
+  for (const field of findFields(fields, ['hardwareConcurrent', 'deviceMemory'])) {
+    const automatic = field.options.find(option => option.value === '');
+    if (automatic) automatic.label = automaticHardwareLabel(row._fingerprintDraft.generatedHardware?.[field.name]);
+  }
 }
 
 function getPlatformUrls(fields) {
@@ -74,6 +83,7 @@ async function refreshUserAgent(fields, { uaOnly = false } = {}) {
     find: findField,
     keepSeed: uaOnly,
     randomizeUaVersion: uaOnly,
+    updateHardware: row => updateAutomaticHardware(fields, row),
     request: requestFingerprintPreview,
   });
   return results.length > 0;
@@ -87,7 +97,7 @@ async function fetchBrowserVersions(query) {
   }));
 }
 
-function refreshProfileFingerprint(fields, { count = 1, preview = true, preserve } = {}) {
+function refreshProfileFingerprint(fields, { count = 1, preview = true, preserve, randomizeUaVersion = false } = {}) {
   return refreshFingerprintDraft(fields, {
     read: readPreviewInputs,
     apply: applyFields,
@@ -95,6 +105,8 @@ function refreshProfileFingerprint(fields, { count = 1, preview = true, preserve
     count,
     preview,
     preserve,
+    randomizeUaVersion,
+    updateHardware: row => updateAutomaticHardware(fields, row),
     request: payload => globalThis.electronAPI.send('util:genRandomFingerprint', payload, payload.count),
   });
 }
@@ -128,12 +140,15 @@ function selectSavedResolution(options, width, height, fallback) {
   return { options: [...options, value], value };
 }
 
-function hardwareOptions(options, savedValue) {
-  const values = [{ label: $t('自动'), value: '' },
-    ...options.map(option => option.value === '0' ? { ...option, label: $t('跟随系统') } : option)];
+function automaticHardwareLabel(value) {
+  return value > 0 ? `${$t('自动')} (${value})` : $t('自动');
+}
+
+function hardwareOptions(options, savedValue, effectiveValue) {
   const value = String(savedValue ?? '');
-  // Preserve 6 GB when editing older profiles that already use this value.
-  if (value === '6' && !values.some(option => option.value === value)) values.push({ label: value, value });
+  const values = [{ label: automaticHardwareLabel(value ? undefined : effectiveValue), value: '' },
+    ...options.map(option => option.value === '0' ? { ...option, label: $t('跟随系统') } : option)];
+  if (value && !values.some(option => option.value === value)) values.push({ label: value, value });
   return values;
 }
 
@@ -342,8 +357,8 @@ async function initializeProfileInputs(profile = {}, notify = () => {}, gate) {
     { options: resolutions, value: selectedResolution } = selectSavedResolution(
       availableResolutions, profile.resolutionX, profile.resolutionY, defaultResolution,
     ),
-    coreOptions = hardwareOptions(settings.hardwareConcurrent),
-    memoryOptions = hardwareOptions(settings.deviceMemory, profile.deviceMemory),
+    coreOptions = hardwareOptions(settings.hardwareConcurrent, profile.hardwareConcurrent, profile.hardwarePreview?.hardwareConcurrent),
+    memoryOptions = hardwareOptions(settings.deviceMemory, profile.deviceMemory, profile.hardwarePreview?.deviceMemory),
     showCustomLocation = profile.position !== 2 && profile.isPositionBaseIp === false,
     isMobileOs = showMobileProfileFields(selectedOs?.value, selectedEngine),
     fieldGroups = [],
@@ -353,7 +368,7 @@ async function initializeProfileInputs(profile = {}, notify = () => {}, gate) {
       searchEngine,
       ...Object.fromEntries(
         Object.entries(profile).filter(
-          ([e2]) => !privateProxyKeys.includes(e2) && e2 !== 'proxyInfoList',
+          ([e2]) => !privateProxyKeys.includes(e2) && !['proxyInfoList', 'hardwarePreview'].includes(e2),
         ),
       ),
       ...proxy,
@@ -573,7 +588,7 @@ async function initializeProfileInputs(profile = {}, notify = () => {}, gate) {
         slot: 'userAgent',
         preview: { label: 'User Agent' },
         randomHelp: 'Firefox 使用内核标准 UA；一键随机指纹可更新其他参数',
-        refreshHelp: '按所选系统从同一主版本的 Chrome 官方构建中随机 UA',
+        refreshHelp: '按所选系统随机同一主版本的 UA，版本库缺失时使用当前构建的邻近补丁号',
       },
       {
         type: 'textarea',
@@ -955,15 +970,11 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
         { label: $t('随机'), value: true },
       ],
       preview: { label: $t('字体指纹') },
-      change: async (e2) => {
+      change(e2) {
         if (e2.value) {
-          let { getAllowFontList: e3 } = await globalThis.electronAPI.send(
-              'util:callRandomFingerprintFunc',
-              { getAllowFontList: [] },
-            ),
-            t2 = await globalThis.electronAPI.send('util:genRandomFonts');
-          Object.assign(saved, { font: t2.join(';'), allowFontList: e3 });
-        } else Reflect.deleteProperty(saved, 'font');
+          saved.font = '';
+          delete saved.fontList;
+        }
       },
     },
     {
@@ -1013,13 +1024,12 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
         { label: $t('自定义'), value: 2 },
       ],
       change(e2) {
-        (e2.value === 1 && refreshWebGlFields(),
-          findFields(fingerprintFields, [
-            'webGLManufacturer',
-            'webGLRender',
-          ]).forEach((t2) => {
-            ((t2.visible = e2.value !== 0), (t2.disabled = e2.value !== 2));
-          }));
+        for (const field of findFields(fingerprintFields, webGlFields)) {
+          field.visible = e2.value !== 0;
+          field.readonly = e2.value !== 2;
+          field.icon = e2.value === 2 ? shuffleIcon : undefined;
+        }
+        if (e2.value === 1) void refreshWebGlFields({ reuseSeed: true });
       },
       preview: { label: $t('WebGL Info') },
     },
@@ -1027,22 +1037,22 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       type: 'text',
       label: $t('WebGL 厂商'),
       name: 'webGLManufacturer',
-      value: profile.webGLManufacturer,
-      icon: 'base/rx_ic_shuffle',
-      disabled: profile.webGLInfo !== 2,
+      value: profile.webGLManufacturer || profile.hardwarePreview?.webGLManufacturer,
+      icon: profile.webGLInfo === 2 ? shuffleIcon : undefined,
+      readonly: profile.webGLInfo !== 2,
       visible: !equalsOrDefault(profile.webGLInfo, 0, false),
-      iconClick: refreshWebGlFields,
+      iconClick: () => refreshWebGlFields(),
     },
     {
       type: 'textarea',
       label: $t('WebGL 渲染'),
       name: 'webGLRender',
-      value: profile.webGLRender,
+      value: profile.webGLRender || profile.hardwarePreview?.webGLRender,
       rows: 3,
-      icon: 'base/rx_ic_shuffle',
-      disabled: profile.webGLInfo !== 2,
+      icon: profile.webGLInfo === 2 ? shuffleIcon : undefined,
+      readonly: profile.webGLInfo !== 2,
       visible: !equalsOrDefault(profile.webGLInfo, 0, false),
-      iconClick: refreshWebGlFields,
+      iconClick: () => refreshWebGlFields(),
     },
     {
       type: 'selectButton',
@@ -1190,7 +1200,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       type: 'text',
       label: ' ',
       name: 'deviceName',
-      value: profile.deviceName,
+      value: profile.deviceName || profile.hardwarePreview?.deviceName,
       placeholder: $t('自动生成'),
       icon: 'base/rx_ic_shuffle',
       visible:
@@ -1218,7 +1228,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
       type: 'text',
       label: ' ',
       name: 'macAddr',
-      value: profile.macAddr,
+      value: profile.macAddr || profile.hardwarePreview?.macAddr,
       icon: 'base/rx_ic_shuffle',
       placeholder: $t('自动生成'),
       errorMsg: $t('请输入有效的 MAC 地址，例如 {address}', { address: '02:00:00:00:00:01' }),
@@ -1777,7 +1787,7 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
   }
 
   let webGlRequest = 0;
-  async function refreshWebGlFields() {
+  async function refreshWebGlFields({ reuseSeed = false } = {}) {
     const request = ++webGlRequest;
     const before = readPreviewInputs(fieldGroups);
     const vendor = findField(fingerprintFields, 'webGLManufacturer');
@@ -1786,12 +1796,12 @@ Name=Value 未写 domain 时，将按行从平台账号的网址自动填充`),
     const previousRenderer = renderer.value;
     try {
       const [sample] = await run(() => refreshFingerprintDraft(fieldGroups, {
-        read: readPreviewInputs, find: findField, preview: false,
-        request: payload => requestFingerprintPreview({ ...payload, webGLInfo: 1 }),
+        read: readPreviewInputs, find: findField, preview: false, keepSeed: reuseSeed,
+        request: payload => requestFingerprintPreview({ ...payload, webGLInfo: 1, webGLManufacturer: '', webGLRender: '' }),
       }));
       const after = readPreviewInputs(fieldGroups);
-      if (request !== webGlRequest || after.webGLInfo === 0 ||
-          ['os', 'osVersion', 'coreType', 'coreVersion'].some(key => before[key] !== after[key])) return;
+      if (request !== webGlRequest ||
+          ['os', 'osVersion', 'coreType', 'coreVersion', 'webGLInfo'].some(key => before[key] !== after[key])) return;
       if (vendor.value === previousVendor && sample?.webGLManufacturer) vendor.value = sample.webGLManufacturer;
       if (renderer.value === previousRenderer && sample?.webGLRender) renderer.value = sample.webGLRender;
     } catch (error) {

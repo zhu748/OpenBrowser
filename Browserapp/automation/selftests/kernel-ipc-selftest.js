@@ -8,7 +8,7 @@ async function main() {
   const calls = [];
   const record = (method) => (...args) => { calls.push([method, ...args]); return method; };
   const engine = {
-    kernelStatus: record('status'), ensureIndependentKernel: record('download'),
+    kernelStatus: record('status'), downloadChromeStable: record('download'),
     checkKernelUpdate: record('update'), setCustomKernel: record('custom'),
     setKernelPolicy: record('policy'), kernelDelete: record('delete'),
     kernelCheck: record('check'), kernelCancelDownload: record('cancel'),

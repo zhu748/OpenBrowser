@@ -361,6 +361,13 @@ class BrowserEngine {
     return kernel;
   }
 
+  async downloadChromeStable(force = false) {
+    await this.kernelManager.loadMeta();
+    const kernel = await this.kernelManager.downloadChromeStable(force);
+    this.emit({ type: 'kernel-ready', kernel });
+    return kernel;
+  }
+
   async checkKernelUpdate() {
     return this.kernelManager.checkUpdate();
   }
@@ -1349,23 +1356,7 @@ class BrowserEngine {
     item.workerFingerprintConnection?.close();
     item.workerFingerprintConnection = null;
     const profile = this.profiles.get(safe) || item.profile || {};
-    // Snapshot cookies before close when this env opts into cloud backup (close-time Cookie sync)
-    let cookieExport = '';
-    const wantCookieSnap = profile.advanced?.cloudBackup && profile.advanced?.syncCookiesOnClose !== false;
-    if (wantCookieSnap && item.cdpConnection) {
-      cookieExport = await this.exportProfileCookies(item.cdpConnection).catch(() => '');
-      if (cookieExport) {
-        const latest = this.profiles.get(safe) || profile;
-        this.profiles.set(safe, { ...latest, cookies: cookieExport.slice(0, 500000), updatedAt: new Date().toISOString() });
-        this.invalidateStatusCache?.(safe);
-        // Do not await the full-store persist on the stop critical path:
-        // stopAll launches N concurrent stops and each awaiting persist()
-        // turned batch exit into N full-profile serializations + writes. The
-        // coalesced writer merges these; the quit chain's flushPersistence()
-        // is the durability guarantee.
-        this.persist().catch(() => {});
-      }
-    }
+    const cookieExported = await this.saveClosingCookies(safe, item);
     let graceful = !item.child || isChildExited(item.child);
     let closeTimer = null;
     if (!graceful && item.child) {
@@ -1403,13 +1394,13 @@ class BrowserEngine {
         type: 'profile-closed',
         id: safe,
         cloudBackup: true,
-        cookieExported: Boolean(cookieExport),
+        cookieExported,
         profile: this.profiles.get(safe) || profile,
         lifecycleGeneration: item.lifecycleGeneration,
         reason: 'stop',
       });
     }
-    return { ...cleanupResult, id: safe, running: false, graceful, cookieExported: Boolean(cookieExport) };
+    return { ...cleanupResult, id: safe, running: false, graceful, cookieExported };
   }
 
   async stopAll() {

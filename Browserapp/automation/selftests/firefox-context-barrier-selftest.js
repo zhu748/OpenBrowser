@@ -2,7 +2,9 @@
 
 const { LIVE_PROBE_EXPRESSION } = require('../fingerprint/delivery-probe');
 const assert = require('node:assert/strict');
-const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup } = require('../firefox-fingerprint');
+const { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxContext, navigateFirefoxStartup } = require('../firefox-fingerprint');
+const { navigateFirefox } = require('../browser-control');
+const { openLaunch } = require('../../rebuild/host-actions');
 const { BidiConnection } = require('../../network/bidi-connection');
 
 const profile = { id: 'firefox-contexts', os: 'Windows', engine: 'firefox', privacy: {
@@ -29,9 +31,10 @@ function fixture(behavior = {}) {
     calls.push({ method, params });
     if (method.startsWith('emulation.')) return behavior.emulate?.(method, params) || {};
     if (method === 'permissions.setPermission') return behavior.permission?.(params) || {};
-    if (method === 'browsingContext.getTree') return { contexts: [{ context: 'initial', url: 'about:blank' }] };
+    if (method === 'browsingContext.getTree') return behavior.tree?.() || { contexts: [{ context: 'initial', url: 'about:blank' }] };
     if (method === 'script.addPreloadScript') return { script: 'preload' };
-    if (method === 'script.evaluate') return { type: 'success', result: params.expression === LIVE_PROBE_EXPRESSION ? remote(live) : { type: 'undefined' } };
+    if (method === 'script.evaluate') return { type: 'success', result: params.expression.includes(LIVE_PROBE_EXPRESSION)
+      ? remote(behavior.probe?.(params) || live) : { type: 'undefined' } };
     if (method === 'browsingContext.navigate') return behavior.navigate?.(params) || {};
     if (method === 'browsingContext.create') {
       if (behavior.emitCreated !== false) {
@@ -65,6 +68,50 @@ async function test(name, run) { await run();passed += 1;console.log('PASS ' + n
     assert.equal(h.calls.some(call => call.method === 'browsingContext.navigate'), false);
     await navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']);assert.equal(attempts, 2);
   });
+  await test('simultaneous Firefox navigations share the native permission operation for an origin', async () => {
+    const setting = deferred();
+    const h = fixture({ geoPermission: 'granted', permission: () => setting.promise });
+    const initialized = await h.initialize();
+    const first = navigateFirefoxContext(h.connection, initialized.context, 'https://one.test/a');
+    const second = navigateFirefoxContext(h.connection, 'second', 'https://one.test/b');
+    try {
+      await turn();
+      assert.equal(h.calls.filter(call => call.method === 'permissions.setPermission').length, 1);
+      assert.equal(h.calls.filter(call => call.method === 'browsingContext.navigate').length, 0);
+    } finally { setting.resolve({});await Promise.all([first, second]); }
+    assert.deepEqual(h.calls.filter(call => call.method === 'browsingContext.navigate').map(call => call.params.context), ['initial', 'second']);
+  });
+  await test('opening an OS link waits for native Firefox settings in the new tab', async () => {
+    const setup = deferred();
+    const h = fixture({ geoPermission: 'granted', emulate: (method, params) =>
+      method === 'emulation.setGeolocationOverride' && params.contexts?.[0] === 'second' ? setup.promise : {} });
+    const initialized = await h.initialize();
+    const item = { engine: 'firefox', bidiConnection: h.connection, bidiContext: initialized.context };
+    const engine = { profiles: new Map([[profile.id, profile]]), profileForEdit: () => ({ profile }), async start() {},
+      running: new Map([[profile.id, item]]) };
+    const opening = openLaunch(engine, { id: profile.id, urls: ['https://one.test/'] });
+    try {
+      await turn();
+      assert.ok(h.calls.some(call => call.method === 'emulation.setGeolocationOverride' && call.params.contexts?.[0] === 'second'));
+      assert.ok(!h.calls.some(call => call.method === 'browsingContext.navigate'));
+    } finally { setup.resolve({});await opening;await Promise.all(h.notifications); }
+    const index = h.calls.findIndex(call => call.method === 'browsingContext.navigate');
+    assert.ok(h.calls.findIndex(call => call.method === 'permissions.setPermission') < index);
+    assert.deepEqual(h.calls[index].params, { context: 'second', url: 'https://one.test/', wait: 'complete' });
+    assert.equal(h.calls[index + 1].method, 'script.evaluate');
+  });
+  await test('live Firefox navigation rejects malformed URLs and allows privileged browser pages', async () => {
+    const h = fixture();
+    const initialized = await h.initialize();
+    const item = { bidiConnection: h.connection, bidiContext: initialized.context };
+    const before = h.calls.filter(call => call.method === 'script.evaluate').length;
+    await assert.rejects(navigateFirefox(item, 'https://'), { code: 'ERR_INVALID_URL' });
+    assert.ok(!h.calls.some(call => call.method === 'browsingContext.navigate'));
+    await navigateFirefox(item, 'about:support');
+    assert.equal(h.calls.filter(call => call.method === 'script.evaluate').length, before);
+    await navigateFirefox(item, 'about:blank');
+    assert.ok(h.calls.at(-1).params.expression.includes("'documentInstalled'"));
+  });
   await test('Firefox startup allows website network errors and rejects transport errors', async () => {
     const networkError = Object.assign(Error('Error: NS_ERROR_NET_RESET'), { code: 'unknown error' });
     const h = fixture({ navigate: ({ url }) => {
@@ -79,6 +126,15 @@ async function test(name, run) { await run();passed += 1;console.log('PASS ' + n
     assert.ok(h.calls.some(call => call.method === 'browsingContext.navigate' && call.params.url === 'https://two.test/'));
     await assert.rejects(navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']), networkError);
     await assert.rejects(navigateFirefoxStartup(h.connection, initialized.context, ['https://three.test'], options), /BiDi connection closed/);
+  });
+  await test('Firefox refuses startup when the navigated document reports a different identity', async () => {
+    let navigated = false;
+    const h = fixture({
+      navigate: () => { navigated = true; },
+      probe: () => navigated ? { ...live, userAgent: 'Unexpected Gecko identity' } : live,
+    });
+    const initialized = await h.initialize();
+    await assert.rejects(navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']), /实际 UA 与配置不一致/);
   });
   await test('startup waits for the shared native context setup before navigating the new tab', async () => {
     const gate = deferred();
@@ -124,6 +180,39 @@ async function test(name, run) { await run();passed += 1;console.log('PASS ' + n
     await assert.rejects(h.notifications[0], /position delivery failed/);
     assert.equal(h.calls.some((call) => call.method === 'browsingContext.navigate' && call.params.context === 'second'), false);
     assert.equal(initialized.warnings.some((warning) => warning.includes('position delivery failed')), false);
+  });
+  await test('closing a Firefox tab during setup does not fail its sibling tabs', async () => {
+    const gate = deferred();
+    const h = fixture({ emulate: (method, params) => {
+      if (method === 'emulation.setScreenSettingsOverride' && params.contexts?.[0] === 'closing') {
+        return gate.promise.then(() => { throw Object.assign(new Error('tab closed'), { code: 'no such frame' }); });
+      }
+      return {};
+    } });
+    const initialized = await h.initialize();
+    const closing = h.emit('browsingContext.contextCreated', { context: 'closing', parent: null });
+    await turn();
+    await h.emit('browsingContext.contextDestroyed', { context: 'closing' });
+    gate.resolve();
+    await closing;
+    await navigateFirefoxStartup(h.connection, initialized.context, ['https://one.test']);
+    assert.ok(h.calls.some(call => call.method === 'browsingContext.navigate' && call.params.context === 'initial'));
+  });
+  await test('a missing-context reply is ignored only when the tab has actually gone', async () => {
+    const failure = Object.assign(new Error('tab missing'), { code: 'no such frame' });
+    let stillListed = false;
+    const h = fixture({
+      tree: () => ({ contexts: [{ context: 'initial' }, ...(stillListed ? [{ context: 'missing' }] : [])] }),
+      emulate: (method, params) => {
+        if (method === 'emulation.setGeolocationOverride' && params.contexts?.[0] === 'missing') throw failure;
+        return {};
+      },
+    });
+    await h.initialize();
+    const created = { context: 'missing', parent: null };
+    await h.emit('browsingContext.contextCreated', created);
+    stillListed = true;
+    await assert.rejects(h.emit('browsingContext.contextCreated', created), failure);
   });
   await test('a failed initial configured position stops before document registration or navigation', async () => {
     const h = fixture({ emulate: (method) => { if (method === 'emulation.setGeolocationOverride') throw new Error('position unsupported');return {}; } });

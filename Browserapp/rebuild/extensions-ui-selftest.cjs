@@ -18,6 +18,17 @@ const sourcePage=process.argv.includes('--source-page'),prefix=sourcePage?'sourc
   await page.getByText('扩展中心',{exact:true}).first().click();
   if(sourcePage)await page.evaluate(()=>globalThis.__router.replace({path:'/extensions',query:{renderer:'source'}}));
   await button('本地上传').first().waitFor();
+  if (!sourcePage) {
+    const paginator = page.locator('.extensions .p-paginator');
+    await paginator.waitFor();
+    for (const height of [660, 960]) {
+      await page.setViewportSize({ width: 1448, height });
+      const gap = await paginator.evaluate(element =>
+        element.closest('.extensions').getBoundingClientRect().bottom - element.getBoundingClientRect().bottom);
+      assert.ok(Math.abs(gap) <= 1, `扩展分页栏应贴近面板底部（差 ${gap}px）`);
+    }
+    result.checks.push('扩展分页栏在调整视口高度后仍贴近面板底部');
+  }
   await screenshot('extensions-empty.png');await button('本地上传').first().click();
   await button('选择文件夹').click();
   const nameInput=sourcePage?page.getByLabel('扩展名称'):page.locator('input.extension-input');

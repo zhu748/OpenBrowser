@@ -16,9 +16,9 @@ function injectionOs(fp) {
   return fp.uaProfile?.os || (fp.mobile ? 'android' : 'windows');
 }
 
-/** CFG.timezone: explicit, then the dynamicConfig exit-IP zone, else null. */
+/** Explicit null clears the override. Older snapshots can omit the field. */
 function injectionTimezone(fp) {
-  return fp.timezone || fp.dynamicConfig?.timezone || null;
+  return (Object.hasOwn(fp, 'timezone') ? fp.timezone : fp.dynamicConfig?.timezone) || null;
 }
 
 /** CFG.deviceMemory: pass legal quantised tiers through, snap illegal ones. */

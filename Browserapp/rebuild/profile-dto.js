@@ -3,7 +3,7 @@
 // Workbench DTO translation belongs here, independently of routing and persistence.
 const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../engine/profile-sanitizer");
-const { resolveDoNotTrackMode, resolveFingerprintDeviceSettings, geolocationUsesIp } = require('../shared/profile-values');
+const { resolveDoNotTrackMode, resolveFingerprintDeviceSettings, resolveFingerprintSurfaceModes, geolocationUsesIp } = require('../shared/profile-values');
 const { CURRENT_FINGERPRINT_VERSION } = require('../automation/fingerprint/generation');
 
 const { labelIdsOf, ADVANCED_FIELDS, NOISE_FIELDS, parseWindowPosition, formatWindowPosition } = require('./profile-fields');
@@ -171,17 +171,8 @@ function fromRoxy(v, base = {}) {
     mapped.advanced.blockImages = !enabled && kb === 0;
     mapped.advanced.imageMaxBytes = enabled ? 0 : Math.floor(kb * 1024);
   }
-  for (const [source, target] of Object.entries(NOISE_FIELDS))
-    if (Object.hasOwn(v, source))
-      mapped.privacy[target] = v[source] ? "noise" : "real";
   const webrtc = Object.hasOwn(v, 'webRTC') && ['proxy', 'real', 'disabled'][v.webRTC];
   if (typeof webrtc === 'string') mapped.privacy.webrtc = webrtc;
-  if (Object.hasOwn(v, "webGLInfo"))
-    mapped.privacy.webglMeta = { 0: "real", 1: "noise", 2: "custom" }[
-      v.webGLInfo
-    ];
-  if (Object.hasOwn(v, "webGpu"))
-    mapped.privacy.webgpu = v.webGpu === "block" ? "blocked" : v.webGpu;
   if (Object.hasOwn(v, "doNotTrack")) {
     const enabled = resolveDoNotTrackMode({ dnt: v.doNotTrack }) === 'on';
     // The Workbench boolean represents both inactive modes as false.
@@ -218,6 +209,22 @@ function fromRoxy(v, base = {}) {
       : null;
   }
   const fp = { ...mapped.privacy.fingerprint };
+  const surfaces = resolveFingerprintSurfaceModes(base.privacy);
+  const applySurfaceMode = (key, mode) => {
+    if (mode === undefined) return;
+    mapped.privacy[key] = mode;
+    if (mode !== surfaces[key] && typeof fp[key] === 'string') delete fp[key];
+  };
+  for (const [field, key] of Object.entries(NOISE_FIELDS)) {
+    if (!Object.hasOwn(v, field)) continue;
+    // The two-state control represents legacy blocked/muted as non-real.
+    // Merely round-tripping an edit must retain that saved setting.
+    const enabled = surfaces[key] === 'real' ? 'noise' : surfaces[key];
+    applySurfaceMode(key, v[field] ? enabled : 'real');
+  }
+  const webglMode = ['real', surfaces.webglMeta === 'blocked' ? 'blocked' : 'noise', 'custom'][v.webGLInfo];
+  if (Object.hasOwn(v, 'webGLInfo')) applySurfaceMode('webglMeta', webglMode);
+  if (Object.hasOwn(v, 'webGpu')) applySurfaceMode('webgpu', v.webGpu === 'block' ? 'blocked' : v.webGpu);
   if (typeof webrtc === 'string') delete fp.webrtc;
   for (const [field, override] of [
     ['deviceNameSwitch', 'deviceNameMode'], ['deviceName', 'deviceName'],
@@ -232,20 +239,20 @@ function fromRoxy(v, base = {}) {
   // field instead of letting an old hidden override win during injection.
   if (Object.hasOwn(v, 'userAgent')) delete fp.userAgent;
   if (draft && typeof draft === 'object' && !Array.isArray(draft)) {
-    const generated = draft.generated !== false && mapped.userAgent === draft.userAgent;
+    const generated = v._custom_ua !== true && draft.generated !== false && mapped.userAgent === draft.userAgent;
     fp.uaGenerated = generated;
     if (generated) {
       fp.uaReduced = draft.uaReduced !== false;
       fp.uaVersionRandomized = mapped.engine !== 'firefox' && draft.uaVersionRandomized === true;
       fp.uaPatchRandomized = draft.uaPatchRandomized === true;
       fp.clientHints = draft.clientHints || {};
-    } else if (mapped.userAgent !== previousUa) {
+    } else if (mapped.userAgent !== previousUa || v._custom_ua === true) {
       delete fp.uaReduced;
       delete fp.uaVersionRandomized;
       delete fp.uaPatchRandomized;
       delete fp.clientHints;
     }
-  } else if (Object.hasOwn(v, 'userAgent') && mapped.userAgent !== previousUa) {
+  } else if (Object.hasOwn(v, 'userAgent') && (mapped.userAgent !== previousUa || v._custom_ua === true)) {
     fp.uaGenerated = false;
     delete fp.uaReduced;
     delete fp.uaVersionRandomized;
@@ -253,7 +260,7 @@ function fromRoxy(v, base = {}) {
     delete fp.clientHints;
   }
   for (const [field, key] of [['webGLManufacturer', 'webglVendor'], ['webGLRender', 'webglRenderer']]) {
-    const automatic = v.webGLInfo === 1 && (base.privacy?.webglMeta !== 'noise'
+    const automatic = webglMode === 'noise' && (surfaces.webglMeta !== 'noise'
       || (Object.hasOwn(v, field) && v[field] !== fp[key]));
     if (automatic || (v.webGLInfo !== 2 && isGeneratedHardware(field))) delete fp[key];
     else if (Object.hasOwn(v, field)) fp[key] = v[field];
@@ -277,12 +284,15 @@ function fromRoxy(v, base = {}) {
       v.disableSsl && Array.isArray(v.disableSslList)
         ? v.disableSslList.join(",")
         : "";
-  if (Object.hasOwn(v, "font"))
-    fp.fonts = String(v.font || "")
+  const fonts = Object.hasOwn(v, 'font')
+    ? String(v.font || '')
       .split(";")
       .map((name) => name.trim())
-      .filter(Boolean);
-  else if (Object.hasOwn(v, "fontList")) fp.fonts = v.fontList;
+      .filter(Boolean)
+    : v.fontList;
+  if (Array.isArray(fonts) && fonts.join(';') === draft?.generatedFonts) delete fp.fonts;
+  else if (Object.hasOwn(v, 'font') || Object.hasOwn(v, 'fontList')) fp.fonts = fonts;
+  else if (v.fontType === true && base.privacy?.fontListMode === 'real') delete fp.fonts;
   if (mapped.privacy.fingerprint || Object.keys(fp).length) mapped.privacy.fingerprint = fp;
   for (const [source, target] of Object.entries({
     blockDomainList: "blockUrls",
@@ -359,6 +369,7 @@ function fromRoxy(v, base = {}) {
 }
 function toRoxy(p) {
   const device = resolveFingerprintDeviceSettings(p.privacy);
+  const surfaces = resolveFingerprintSurfaceModes(p.privacy);
   let proxy = {};
   if (p.networkMode === "proxy" && p.proxy) {
     try {
@@ -475,10 +486,10 @@ function toRoxy(p) {
     longitude: p.privacy?.longitude,
     latitude: p.privacy?.latitude,
     precisionPos: p.privacy?.accuracy,
-    webGLInfo: { real: 0, noise: 1, custom: 2 }[p.privacy?.webglMeta] ?? 1,
+    webGLInfo: { real: 0, noise: 1, custom: 2 }[surfaces.webglMeta] ?? 1,
     webGLManufacturer: p.privacy?.fingerprint?.webglVendor,
     webGLRender: p.privacy?.fingerprint?.webglRenderer,
-    webGpu: p.privacy?.webgpu === "blocked" ? "block" : p.privacy?.webgpu,
+    webGpu: surfaces.webgpu === 'blocked' ? 'block' : surfaces.webgpu,
     doNotTrack: resolveDoNotTrackMode(p.privacy) === 'on',
     deviceInfo: p.privacy?.mediaDevices !== "real",
     deviceNameSwitch: device.deviceNameMode !== "real",
@@ -529,7 +540,7 @@ function toRoxy(p) {
     ...Object.fromEntries(
       Object.entries(NOISE_FIELDS).map(([k, v]) => [
         k,
-        p.privacy?.[v] !== "real",
+        surfaces[v] !== 'real',
       ]),
     ),
     ...Object.fromEntries(

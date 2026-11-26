@@ -73,7 +73,7 @@ function offlineStartEngine(tmp, emitted = []) {
   });
 }
 
-async function postPrepOwnershipChange(tmp) {
+async function seedPrepOwnershipChange(tmp) {
   const engine = offlineStartEngine(tmp), id = 'prefs-ownership', root = engine.profileRoot(id);
   const history = path.join(root, 'Default', 'History');
   await fsp.mkdir(path.dirname(history), { recursive: true });
@@ -84,9 +84,8 @@ async function postPrepOwnershipChange(tmp) {
     cleanupStarted = true;
     return proto.cleanupStartupResources.apply(engine, args);
   };
-  // A sync ownership check fails just after the first post-prep job starts.
-  engine.prepareProfileFilesForStart = async (...args) => {
-    await proto.prepareProfileFilesForStart.apply(engine, args);
+  // A sync ownership check fails just after the seed write is staged.
+  engine.kernelManager.readInstalledVersion = async () => {
     const set = engine.profiles.set.bind(engine.profiles);
     engine.profiles.set = (key, value) => {
       const result = set(key, value);
@@ -94,6 +93,7 @@ async function postPrepOwnershipChange(tmp) {
       return result;
     };
     engine.persist = async () => { entered.resolve(); await release.promise; };
+    return '128.0';
   };
   const outcome = engine.start({ ...profile, id, name: id, advanced: { ...profile.advanced, clearHistoryOnStart: true } })
     .then(() => { throw Error('changed ownership must block launch'); }, (error) => error);
@@ -222,7 +222,7 @@ async function preferenceReadFailures() {
       }
     }
     await preparationLeavesLockToOwner(tmp);
-    await postPrepOwnershipChange(tmp);
+    await seedPrepOwnershipChange(tmp);
     console.log('  PASS  creation, failure preservation, path validation, and independent lock ownership');
   } finally {
     fsp.readFile = readFile;

@@ -15,15 +15,6 @@ async function activityAppend(service, p) {
     at: new Date().toISOString(),
   });
   service.data.activity = service.data.activity.slice(-500);
-  service.data.notifications ??= [];
-  service.data.notifications.push({
-    id: uid(),
-    title: "本地操作记录",
-    message: action,
-    at: new Date().toISOString(),
-    read: false,
-  });
-  service.data.notifications = service.data.notifications.slice(-100);
   await service.save();
   return true;
 }
@@ -58,6 +49,7 @@ async function notificationsAppend(service, p) {
   service.data.notifications ??= [];
   service.data.notifications.push({
     id: uid(),
+    source: "local",
     title: p.title,
     message: p.message,
     at: new Date().toISOString(),

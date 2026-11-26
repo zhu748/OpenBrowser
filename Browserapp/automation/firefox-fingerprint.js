@@ -1,10 +1,10 @@
 'use strict';
 
 const { buildFingerprint, buildInjectionScript, buildWorkerInjectionScript, assertFingerprintConsistency } = require('./fingerprint');
-const { firefoxUserAgent } = require('./kernel-versions');
+const { firefoxUserAgent, assertBrowserKernelMajor } = require('./kernel-versions');
 const { resolveUaPatchVersion } = require('./ua-version');
 const { evaluateFingerprintDelivery } = require('./request-header-rewriter');
-const { LIVE_PROBE_EXPRESSION } = require('./fingerprint/delivery-probe');
+const { buildDocumentDeliveryProbe, LIVE_PROBE_EXPRESSION } = require('./fingerprint/delivery-probe');
 const { resolveFingerprintGeolocation } = require('./fingerprint/geolocation-policy');
 const { evaluateBidi } = require('../network/bidi-connection');
 const { startupNavigationUrl } = require('../engine/startup-session');
@@ -12,6 +12,7 @@ const { assertUrlAccessPolicySupported } = require('./url-access-policy');
 
 // Context events and startup navigation share the same in-flight native setup.
 const contextEmulation = new WeakMap();
+const isMissingContext = error => error?.code === 'no such frame' || error?.code === 'no such window';
 
 function buildFirefoxFingerprint(profile, version) {
   assertUrlAccessPolicySupported(profile, 'firefox');
@@ -54,7 +55,8 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
   const warnings = [];
   const { position, permission } = resolveFingerprintGeolocation(fingerprint, profile);
   const reportWarning = (message) => { if (!warnings.includes(message)) warnings.push(message); };
-  await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
+  const session = await connection.command('session.new', { capabilities: { alwaysMatch: { acceptInsecureCerts: Boolean(profile.advanced?.ignoreHttpsError) } } });
+  assertBrowserKernelMajor(fingerprint.kernelVersion, session?.capabilities?.browserVersion);
   const installWorkerFilter = options.installWorkerFilter || options.installLocalWorkerFilter;
   if (installWorkerFilter) await installWorkerFilter();
   // Apply native emulation to explicit top-level contexts, so the tree has to
@@ -81,10 +83,16 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
       }
     };
     try { await scoped('emulation.setUserAgentOverride', { userAgent: fingerprint.userAgent }); }
-    catch (error) { reportWarning(`emulation.setUserAgentOverride(${label}): ${error.message}`); }
+    catch (error) {
+      if (isMissingContext(error)) throw error;
+      reportWarning(`emulation.setUserAgentOverride(${label}): ${error.message}`);
+    }
     if (fingerprint.timezone) {
       try { await scoped('emulation.setTimezoneOverride', { timezone: fingerprint.timezone }); }
-      catch (error) { reportWarning(`emulation.setTimezoneOverride(${label}): ${error.message}`); }
+      catch (error) {
+        if (isMissingContext(error)) throw error;
+        reportWarning(`emulation.setTimezoneOverride(${label}): ${error.message}`);
+      }
     }
     if (fingerprint.screen) {
       const { width, height, devicePixelRatio } = fingerprint.screen;
@@ -138,8 +146,24 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
       ? ensureContext(realm.context) : null;
     if (event.method === 'browsingContext.contextDestroyed') pendingContexts.delete(realm?.context);
     await previousEvent?.(event, conn);
-    // Required native failures propagate to BiDi's fatal event/disconnect path.
-    if (contextReady) await contextReady;
+    if (contextReady) {
+      try {
+        await contextReady;
+      } catch (error) {
+        // A user can close the tab before a scoped command replies. The
+        // destruction event may follow the failed command on the wire.
+        if (pendingContexts.get(realm.context) !== contextReady) return;
+        if (isMissingContext(error)) {
+          const tree = await conn.command('browsingContext.getTree', { maxDepth: 0 }, 2000).catch(() => null);
+          if (pendingContexts.get(realm.context) !== contextReady) return;
+          if (Array.isArray(tree?.contexts) && tree.contexts.every(entry => typeof entry?.context === 'string' && entry.context !== realm.context)) {
+            pendingContexts.delete(realm.context);
+            return;
+          }
+        }
+        throw error;
+      }
+    }
     if (event.method === 'script.realmCreated' && /worker$/.test(realm?.type || '')) {
       try { await evaluateBidi(conn, { realm: realm.realm }, workerSource); }
       catch (error) {
@@ -151,24 +175,34 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
     }
   };
   await connection.command('session.subscribe', { events: ['script.realmCreated', 'browsingContext.contextCreated', 'browsingContext.contextDestroyed'] });
-  for (const context of contexts) {
-    await evaluateBidi(connection, { context: context.context }, source);
-    const live = await evaluateBidi(connection, { context: context.context }, LIVE_PROBE_EXPRESSION);
+  const probe = buildDocumentDeliveryProbe(fingerprint);
+  const verifyDocument = async (context, requireInstallation = false) => {
+    const live = await evaluateBidi(connection, { context }, requireInstallation ? probe : LIVE_PROBE_EXPRESSION);
     const verified = evaluateFingerprintDelivery(profile, fingerprint, live, { strict: true });
     if (!verified.ok) throw new Error('Firefox 指纹交付校验失败：' + verified.mismatches.map((m) => m.message).join('; '));
     for (const warning of verified.warnings) reportWarning(warning);
-  }
-  const permissionOrigins = new Set();
-  const prepareNavigation = async (url) => {
-    if (permission === 'prompt') return;
-    const parsed = new URL(url);
-    if (!['http:', 'https:'].includes(parsed.protocol) || permissionOrigins.has(parsed.origin)) return;
-    await connection.command('permissions.setPermission', {
-      descriptor: { name: 'geolocation' }, state: permission, origin: parsed.origin,
-    });
-    permissionOrigins.add(parsed.origin);
   };
-  contextEmulation.set(connection, { ensureContext, prepareNavigation });
+  for (const { context } of contexts) {
+    await evaluateBidi(connection, { context }, source);
+    await verifyDocument(context, true);
+  }
+  const permissionOrigins = new Map();
+  const prepareNavigation = async (url) => {
+    if (permission === 'prompt' || !['http:', 'https:'].includes(url.protocol)) return;
+    const { origin } = url;
+    let setting = permissionOrigins.get(origin);
+    if (!setting) {
+      setting = connection.command('permissions.setPermission', {
+        descriptor: { name: 'geolocation' }, state: permission, origin,
+      }).catch((error) => {
+        permissionOrigins.delete(origin);
+        throw error;
+      });
+      permissionOrigins.set(origin, setting);
+    }
+    await setting;
+  };
+  contextEmulation.set(connection, { ensureContext, prepareNavigation, verifyDocument });
   return {
     context: contexts[0].context, preload: preload.script, warnings,
     capabilities: {
@@ -193,24 +227,37 @@ async function initializeFirefoxFingerprint(connection, fingerprint, profile, op
   };
 }
 
-async function navigateFirefoxStartup(connection, context, urls, { onNavigationError } = {}) {
+async function navigateFirefoxContext(connection, context, url, { wait = 'complete', timeout = 15000, onNavigationError } = {}) {
   const policy = contextEmulation.get(connection);
   if (!policy) throw new Error('Firefox fingerprint initialization is required before navigation');
+  if (!context) throw new Error('Firefox did not create a browsing context');
+  const destination = new URL(url);
+  await policy.ensureContext(context, 'navigation');
+  await policy.prepareNavigation(destination);
+  let result;
+  try {
+    result = await connection.command('browsingContext.navigate', { context, url: destination.href, wait }, timeout);
+  } catch (error) {
+    const failure = error.code === 'unknown error' &&
+      /\b(NS_ERROR_(?:NET_[A-Z0-9_]+|UNKNOWN_HOST|UNKNOWN_PROXY_HOST|PROXY_CONNECTION_REFUSED|CONNECTION_REFUSED|OFFLINE))\b/.exec(error.message);
+    if (!failure || !onNavigationError) throw error;
+    onNavigationError(failure[1]);
+    return;
+  }
+  const loaded = result?.url ? new URL(result.url) : destination;
+  // Firefox's privileged about: pages intentionally run without a preload.
+  const blank = loaded.protocol === 'about:' && /^(?:blank|srcdoc)$/i.test(loaded.pathname);
+  if (blank || loaded.protocol !== 'about:') await policy.verifyDocument(context, blank);
+  return result;
+}
+
+async function navigateFirefoxStartup(connection, context, urls, { onNavigationError } = {}) {
+  if (!contextEmulation.has(connection)) throw new Error('Firefox fingerprint initialization is required before navigation');
   urls = [...new Set(urls.map(startupNavigationUrl).filter(Boolean))];
   for (let index = 0; index < urls.length; index += 1) {
     const target = index === 0 ? context : (await connection.command('browsingContext.create', { type: 'tab' })).context;
-    if (!target) throw new Error('Firefox did not create a browsing context');
-    await policy.ensureContext(target, 'startup');
-    await policy.prepareNavigation(urls[index]);
-    try {
-      await connection.command('browsingContext.navigate', { context: target, url: urls[index], wait: 'interactive' }, 15000);
-    } catch (error) {
-      const failure = error.code === 'unknown error' &&
-        /\b(NS_ERROR_(?:NET_[A-Z0-9_]+|UNKNOWN_HOST|UNKNOWN_PROXY_HOST|PROXY_CONNECTION_REFUSED|CONNECTION_REFUSED|OFFLINE))\b/.exec(error.message);
-      if (!failure || !onNavigationError) throw error;
-      onNavigationError(failure[1]);
-    }
+    await navigateFirefoxContext(connection, target, urls[index], { wait: 'interactive', onNavigationError });
   }
 }
 
-module.exports = { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxStartup };
+module.exports = { buildFirefoxFingerprint, initializeFirefoxFingerprint, navigateFirefoxContext, navigateFirefoxStartup };

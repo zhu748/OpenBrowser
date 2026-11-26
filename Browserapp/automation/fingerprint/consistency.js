@@ -1,7 +1,7 @@
 'use strict';
 
 // Validate an assembled fingerprint without constructing or mutating its identity.
-const { normalizeNetworkInformation, DEVICE_MEMORY_TIERS } = require('../../shared/profile-values');
+const { normalizeNetworkInformation, DEVICE_MEMORY_TIERS, MAX_FINGERPRINT_DPR } = require('../../shared/profile-values');
 const { parseOsFromUa, parseChromeVersion, osChromeSupportViolation } = require('../user-agent');
 const { desktopOs, OS_PRESETS, expectedClientHintPlatform, webglParameterOverrides } = require('./shared');
 
@@ -129,8 +129,8 @@ function fingerprintConsistencyIssues(fp) {
   if (Number(screen.screenX) < Number(screen.availLeft) || Number(screen.screenY) < Number(screen.availTop)) {
     add('window-origin-invalid', 'Window origin must not precede the available screen origin.', 'error');
   }
-  if (!(Number(screen.devicePixelRatio) > 0 && Number(screen.devicePixelRatio) <= 4)) {
-    add('device-pixel-ratio-invalid', 'devicePixelRatio must be within the supported desktop range.', 'error');
+  if (!(Number(screen.devicePixelRatio) > 0 && Number(screen.devicePixelRatio) <= MAX_FINGERPRINT_DPR)) {
+    add('device-pixel-ratio-invalid', 'devicePixelRatio must be within the supported range.', 'error');
   }
   if (fp?.hardwareConcurrency != null && (!Number.isInteger(fp.hardwareConcurrency) || fp.hardwareConcurrency < 1 || fp.hardwareConcurrency > 64)) {
     add('cores-invalid', 'hardwareConcurrency must be an integer between 1 and 64 when overridden.', 'error');

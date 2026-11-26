@@ -7,6 +7,20 @@ const { fromRoxy, toRoxy } = require("./profile-dto");
 const { buildProfileIndex, decorateProfile } = require("./profile-index");
 const { resolveLocalRoute } = require("./local-route-registry");
 
+function removeLegacyActivityNotifications(data) {
+  if (!Array.isArray(data.notifications) || !data.notifications.length || !Array.isArray(data.activity)) return false;
+  const activity = data.activity.map(row => ({ action: row?.action, time: Date.parse(row?.at) }));
+  const retained = data.notifications.filter(notice => {
+    if (notice?.title !== "本地操作记录" || notice.source || typeof notice.message !== "string") return true;
+    const time = Date.parse(notice.at);
+    // Legacy writes created both timestamps in the same synchronous operation.
+    return !activity.some(row => row.action === notice.message && Math.abs(row.time - time) <= 1000);
+  });
+  if (retained.length === data.notifications.length) return false;
+  data.notifications = retained;
+  return true;
+}
+
 class LocalService {
   constructor({
     engine,
@@ -115,6 +129,7 @@ class LocalService {
       };
     }
     if (this.data.version !== 1) throw Error("Unsupported local store version");
+    migrated = removeLegacyActivityNotifications(this.data) || migrated;
     if (Object.hasOwn(this.data, "pendingProfileRelations")) {
       await require("./profile-relations").restoreProfileRelations(this.engine, this.data.pendingProfileRelations);
       delete this.data.pendingProfileRelations;

@@ -52,7 +52,7 @@ async function checkActivityRecords() {
   assert.equal(await service.request('activity:append', { action }), true);
   assert.equal(writes.length, 1);
   assert.equal(writes[0].activity[0].action, action);
-  assert.equal((await service.request('notifications:list'))[0].message, action);
+  assert.deepEqual(await service.request('notifications:list'), []);
 }
 
 async function checkNotificationWrites(service) {
@@ -687,9 +687,14 @@ async function checkStartupProjectRecovery() {
   process.env.OPENBROWSER_MASTER_KEY = randomBytes(32).toString('hex');
   const existing = { id: 7, project_id: 7, projectName: 'Current legacy label' };
   const recovered = { id: 'missing', project_id: 'missing', projectName: 'Recovered label' };
+  const activity = [{ action: 'ui_action', at: '2026-07-01T09:00:00.000Z' }];
+  const mirrored = { id: 'mirrored', title: '本地操作记录', message: 'ui_action', at: '2026-07-01T09:00:00.002Z', read: false };
+  const actual = { id: 'actual', title: 'Cookie Robot', message: 'Warmup completed', at: mirrored.at, read: false };
+  const explicit = { ...mirrored, id: 'explicit', source: 'local', read: true };
+  const later = { ...mirrored, id: 'later', at: '2026-07-01T09:00:10.000Z', read: false };
   const initial = JSON.stringify({
     version: 1, groups: [existing], templates: [], filters: [], settings: { view: 'fixture' },
-    skills: [], tasks: [],
+    skills: [], tasks: [], activity, notifications: [actual, mirrored, explicit, later],
   });
   const open = () => Object.assign(Object.create(LocalService.prototype), {
     file, queue: Promise.resolve(),
@@ -721,11 +726,16 @@ async function checkStartupProjectRecovery() {
     assert.equal(replacements, 2, 'retry persists exactly one recovered snapshot');
     assert.deepEqual(first.data.groups, [existing, recovered],
       'legacy numeric ID and normalized profile group ID refer to the same project');
-    assert.deepEqual((await readLocalStore(file)).data.groups, [existing, recovered]);
+    const stored = (await readLocalStore(file)).data;
+    assert.deepEqual(stored.groups, [existing, recovered]);
+    assert.deepEqual(stored.activity, activity, 'migration preserves the original activity log');
+    assert.deepEqual(stored.notifications, [actual, explicit, later],
+      'migration removes only the historical duplicate and preserves genuine read flags');
     const reopened = open();
     await reopened.load();
     assert.deepEqual(reopened.data.groups, [existing, recovered], 'recovery is idempotent across fresh instances');
     assert.deepEqual(await reopened.request('settings:get'), { view: 'fixture' });
+    assert.deepEqual(await reopened.request('notifications:list'), [later, explicit, actual]);
     assert.equal(replacements, 2, 'another startup does not rewrite the recovered file');
   } finally {
     fs.rename = originalRename;

@@ -5,8 +5,8 @@ const { writeFileAtomic, isVersionedArchiveUrl, buildVersionFromUrl, pinnedArchi
 /**
  * Independent Chromium kernel manager.
  *
- * Runtime policy: prefer integrated seeds under Browserapp/kernels/ and use the
- * official Google Chrome Stable package when a download is requested.
+ * Runtime policy: prefer integrated seeds under Browserapp/kernels/ and use
+ * Google's Stable channel when a download is requested.
  * Custom user-selected Chromium binaries remain allowed.
  */
 
@@ -41,6 +41,7 @@ const {
   CHROMIUM_CATALOG_URL,
   CHROMIUM_CATALOG_MAX_BYTES,
   CHROMIUM_CATALOG_TTL_MS,
+  CHROMIUM_CATALOG_MAJOR_LIMIT,
   FIREFOX_RELEASES_URL,
   FIREFOX_VERSIONS_URL,
   FIREFOX_CATALOG_TTL_MS,
@@ -65,8 +66,6 @@ const CHROME_STABLE_PACKAGES = Object.freeze({
   'linux:x64': { url: 'https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb', kind: 'deb' },
   'darwin:x64': { url: 'https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg', kind: 'dmg' },
   'darwin:arm64': { url: 'https://dl.google.com/chrome/mac/universal/stable/GGRO/googlechrome.dmg', kind: 'dmg' },
-  'win32:x64': { url: 'https://dl.google.com/chrome/install/googlechromestandaloneenterprise64.msi', kind: 'msi' },
-  'win32:arm64': { url: 'https://dl.google.com/chrome/install/googlechromestandaloneenterprise64.msi', kind: 'msi' },
 });
 
 const SOURCE_WAYFERN = 'donut-wayfern';
@@ -913,6 +912,9 @@ class BrowserKernelManager {
       && Boolean(installed && installed.source === SOURCE_CHROME_STABLE);
     const cftIntegrated = !openBrowserDefault
       && Boolean(installed && installed.source === SOURCE_CFT);
+    const windows = process.platform === 'win32';
+    const stableDownload = windows ? 'Chrome for Testing Stable' : 'Google Chrome Stable 正式包';
+    const stableMetaUrl = windows ? CFT_META : chromeStablePackage()?.url || null;
     return {
       platform: donutPlatformKey(),
       cftPlatform: cftPlatformKey(),
@@ -948,22 +950,22 @@ class BrowserKernelManager {
             engineSite: 'https://www.google.com/chrome/',
           }
           : {
-            name: cftIntegrated ? 'Google Chrome for Testing（旧包）' : !installed ? 'Google Chrome Stable' : '独立内核（安装包内置）',
-            metaUrl: cftIntegrated ? CFT_META : chromeStablePackage()?.url || null,
-            site: cftIntegrated ? 'https://googlechromelabs.github.io/chrome-for-testing/' : 'https://www.google.com/chrome/',
+            name: cftIntegrated ? 'Google Chrome for Testing' : !installed ? stableDownload : '独立内核（安装包内置）',
+            metaUrl: cftIntegrated ? CFT_META : stableMetaUrl,
+            site: cftIntegrated || windows ? 'https://googlechromelabs.github.io/chrome-for-testing/' : 'https://www.google.com/chrome/',
             engineSite: 'https://www.google.com/chrome/',
           },
       note: openBrowserDefault
-        ? 'macOS x86 优先使用安装包/源码内置的 OpenBrowser 148（kernels/macos-x64/）；点击下载可切换到 Google Chrome Stable 正式包。'
+        ? `macOS x86 优先使用内置的 OpenBrowser 148（kernels/macos-x64/）。可下载 ${stableDownload}。`
         : wayfernIntegrated
-          ? 'Windows x64 / macOS arm64 优先使用安装包内置 Wayfern；点击下载可切换到 Google Chrome Stable 正式包。'
+          ? `当前使用内置 Wayfern。可下载 ${stableDownload}。`
           : cftIntegrated
-            ? '当前仍在使用旧的 Chrome for Testing 包；点击下载会切换到 Google Chrome Stable 正式包。'
+            ? `当前使用 Chrome for Testing。可下载 ${stableDownload}。`
             : stableIntegrated
               ? '使用 Google Chrome Stable 正式包，已解压到 OpenBrowser 独立内核目录。'
             : installed?.source === SOURCE_CUSTOM
-              ? '正在使用自定义 Chromium。点击下载可切换到 Google Chrome Stable 正式包。'
-              : '未发现内置独立内核。点击下载将获取 Google Chrome Stable 正式包。',
+              ? `正在使用自定义 Chromium。可下载 ${stableDownload}。`
+              : `可从内核管理下载 ${stableDownload}。`,
     };
   }
 
@@ -1046,14 +1048,19 @@ class BrowserKernelManager {
     const version = String(stable?.version || '').trim();
     const platform = cftPlatformKey();
     const entry = (stable?.downloads?.chrome || []).find((item) => item.platform === platform);
-    if (!version || !entry?.url) {
+    if (!/^\d+\.\d+\.\d+\.\d+$/.test(version) || !entry?.url) {
       throw new Error(`当前平台无可用 Chrome for Testing 内核：${platform}`);
     }
     return { version, url: entry.url, platform, source: SOURCE_CFT, raw: stable };
   }
 
-  /** Resolve the official, non-CfT Google Chrome Stable package. */
+  /** Resolve the Stable channel package we can unpack into OpenBrowser. */
   async fetchChromeStableRelease() {
+    // The Windows enterprise MSI wraps an installer; an administrative
+    // extraction does not produce a runnable Chrome tree.
+    if (process.platform === 'win32' && (process.arch === 'x64' || process.arch === 'arm64')) {
+      return this.fetchChromeForTestingRelease();
+    }
     const packageInfo = chromeStablePackage();
     if (!packageInfo) throw new Error(`当前平台没有可用的 Google Chrome Stable 包：${process.platform}/${process.arch}`);
     this.onProgress({ phase: 'meta', message: '准备 Google Chrome Stable 正式包…' });
@@ -1114,20 +1121,30 @@ class BrowserKernelManager {
     }));
   }
 
-  /** Chrome for Testing versions for this platform, newest first (cached 24h). */
+  /** One Chrome for Testing build per major for this platform (cached 24h). */
   async listChromiumVersions({ refresh = false } = {}) {
     const plat = cftPlatformKey();
-    if (!refresh) {
-      const cached = await this.loadCatalogCache(this.chromiumCatalogPath(), plat, CHROMIUM_CATALOG_TTL_MS);
-      if (cached) return { ...cached, versions: this.decorateChromiumInstalled(cached.versions) };
+    const file = this.chromiumCatalogPath();
+    let payload = refresh ? null : await this.loadCatalogCache(file, plat, CHROMIUM_CATALOG_TTL_MS);
+    // Older caches only contain the recent group. Refresh them from the full feed.
+    if (!Array.isArray(payload?.historicalVersions)) {
+      this.onProgress({ phase: 'meta', message: '查询 Chrome for Testing 版本目录…' });
+      const feed = await fetchJson(CHROMIUM_CATALOG_URL, 0, CHROMIUM_CATALOG_MAX_BYTES);
+      const versions = filterChromiumCatalog(feed, plat, Infinity);
+      if (!versions.length) throw new Error(`当前平台无可用 Chrome for Testing 版本：${plat}`);
+      payload = {
+        platform: plat,
+        fetchedAt: new Date().toISOString(),
+        versions: versions.slice(0, CHROMIUM_CATALOG_MAJOR_LIMIT),
+        historicalVersions: versions.slice(CHROMIUM_CATALOG_MAJOR_LIMIT),
+      };
+      await this.saveCatalogCache(file, payload);
     }
-    this.onProgress({ phase: 'meta', message: '查询 Chrome for Testing 版本目录…' });
-    const feed = await fetchJson(CHROMIUM_CATALOG_URL, 0, CHROMIUM_CATALOG_MAX_BYTES);
-    const versions = filterChromiumCatalog(feed, plat);
-    if (!versions.length) throw new Error(`当前平台无可用 Chrome for Testing 版本：${plat}`);
-    const payload = { platform: plat, fetchedAt: new Date().toISOString(), versions };
-    await this.saveCatalogCache(this.chromiumCatalogPath(), payload);
-    return { ...payload, versions: this.decorateChromiumInstalled(versions) };
+    return {
+      ...payload,
+      versions: this.decorateChromiumInstalled(payload.versions),
+      historicalVersions: this.decorateChromiumInstalled(payload.historicalVersions),
+    };
   }
 
   /** Firefox versions for this platform: newest release per major + current ESR. */
@@ -1174,13 +1191,13 @@ class BrowserKernelManager {
   }
 
   /** Download a specific Chrome for Testing version into kernels/chromium-versions/<version>. */
-  installChromiumVersion(version) {
+  installChromiumVersion(version, releaseUrl) {
     const wanted = String(version || '').trim();
     if (!/^\d+(?:\.\d+){0,3}$/.test(wanted)) throw new Error('无效的 Chromium 版本号: ' + wanted);
-    return this._withVersionInstallGuard(`chromium:${wanted}`, () => this.installChromiumVersionInternal(wanted));
+    return this._withVersionInstallGuard(`chromium:${wanted}`, () => this.installChromiumVersionInternal(wanted, releaseUrl));
   }
 
-  async installChromiumVersionInternal(wanted) {
+  async installChromiumVersionInternal(wanted, releaseUrl) {
     const plat = cftPlatformKey();
     await fsp.mkdir(this.kernelsRoot, { recursive: true });
     const work = path.join(this.kernelsRoot, 'chromium-versions', wanted);
@@ -1196,12 +1213,14 @@ class BrowserKernelManager {
 
     // Prefer a catalog URL (known-good list); the official URL pattern is the
     // offline fallback. Both embed the version, so digest pinning applies either way.
-    let url = chromiumUrlForVersion(wanted, plat);
-    try {
-      const { versions } = await this.listChromiumVersions({ refresh: false });
-      const hit = (versions || []).find((item) => item.version === wanted);
-      if (hit?.url) url = hit.url;
-    } catch (_) { /* offline: pattern URL still versioned + pinnable */ }
+    let url = releaseUrl || chromiumUrlForVersion(wanted, plat);
+    if (!releaseUrl) {
+      try {
+        const { versions, historicalVersions } = await this.listChromiumVersions({ refresh: false });
+        const hit = [...versions, ...historicalVersions].find((item) => item.version === wanted);
+        if (hit?.url) url = hit.url;
+      } catch (_) { /* offline: pattern URL still versioned + pinnable */ }
+    }
 
     const archivePath = path.join(this.kernelsRoot, `chromium-${wanted}-${plat}.zip`);
     const pinned = await pinnedArchiveSha256(this.kernelsRoot, url);
@@ -1654,10 +1673,15 @@ class BrowserKernelManager {
     if (previous?.stamp === stamp) return previous.pending;
     const pending = (async () => {
       if (browser.engine === 'firefox') return (await this.probeFirefoxBinary(browser.path)).version;
-      const { stdout, stderr } = await execFileAsync(browser.path, ['--version'], {
-        timeout: 8000, windowsHide: true, maxBuffer: 64 * 1024,
-      });
-      const version = `${stdout}\n${stderr}`.match(/\b(?:chrome|chromium|wayfern)\b[^\d\r\n]*(\d+(?:\.\d+){1,3})/i)?.[1];
+      const timeoutOptions = { timeout: 8000, windowsHide: true, maxBuffer: 64 * 1024 };
+      const { stdout, stderr } = process.platform === 'win32' && browser.independent === false
+        ? await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+          '(Get-Item -LiteralPath $env:OPENBROWSER_KERNEL_VERSION_PATH).VersionInfo.ProductVersion'], {
+          ...timeoutOptions, env: { ...process.env, OPENBROWSER_KERNEL_VERSION_PATH: browser.path },
+        })
+        : await execFileAsync(browser.path, ['--version'], timeoutOptions);
+      const version = stdout.trim().match(/^(\d+(?:\.\d+){1,3})$/)?.[1]
+        || `${stdout}\n${stderr}`.match(/\b(?:chrome|chromium|wayfern|microsoft edge)\b[^\d\r\n]*(\d+(?:\.\d+){1,3})/i)?.[1];
       if (!version) throw Error('无法读取浏览器内核版本，请在内核管理中重新检测或安装内核');
       return version;
     })();
@@ -1679,7 +1703,25 @@ class BrowserKernelManager {
     return this.meta.autoUpdateKernel;
   }
 
-  /** Resolve an integrated kernel, or download the official Chrome Stable package. */
+  /** Install the Stable channel without changing the user's explicit pin. */
+  async downloadChromeStable(force = false) {
+    const release = await this.fetchChromeStableRelease();
+    if (release.source === SOURCE_CFT) {
+      const installed = this.listInstalledKernels().find((kernel) =>
+        kernel.engine === 'chromium' && kernel.source === SOURCE_CFT && kernel.version === release.version);
+      if (!force && installed && fs.existsSync(path.join(installed.tree, 'kernel.json'))
+        && !this.versionInstalls.has(`chromium:${release.version}`)) {
+        this.onProgress({ phase: 'done', message: `Chrome for Testing Stable ${installed.version} 已安装`, version: installed.version });
+        return { ...installed, independent: true };
+      }
+      return this.installChromiumVersion(release.version, release.url);
+    }
+    const existing = this.resolveInstalled();
+    if (!force && existing?.source === SOURCE_CHROME_STABLE) return existing;
+    return this.installChromeStable(release);
+  }
+
+  /** Resolve an integrated kernel, or download Chrome Stable for the host. */
   async ensureIntegrated(force = false) {
     if (!this.installPromise) {
       this.installPromise = this.ensureIntegratedInternal(force).finally(() => { this.installPromise = null; });
@@ -1737,12 +1779,11 @@ class BrowserKernelManager {
       }
     }
 
-    const release = await this.fetchChromeStableRelease();
     try {
-      return await this.installChromeStable(release);
+      return await this.downloadChromeStable(force);
     } catch (error) {
       if (!force && existing?.source === SOURCE_CFT) {
-        this.onProgress({ phase: 'done', message: '正式 Chrome Stable 包不可用，继续使用已安装的 Chrome for Testing', version: existing.version, binary: existing.path });
+        this.onProgress({ phase: 'done', message: 'Chrome Stable 下载失败，继续使用已安装的内核', version: existing.version, binary: existing.path });
         return existing;
       }
       throw error;
@@ -1893,7 +1934,6 @@ class BrowserKernelManager {
       await fsp.mkdir(stagedRoot);
       try {
         if (kind === 'deb') await extractDeb(archivePath, stagedRoot);
-        else if (kind === 'msi') await extractMsi(archivePath, stagedRoot);
         else if (kind === 'dmg') await extractDmg(archivePath, stagedRoot);
         else throw new Error(`不支持的 Chrome Stable 包格式：${kind}`);
       } catch (error) {
@@ -1949,10 +1989,8 @@ class BrowserKernelManager {
     await fsp.rm(archivePath, { force: true }).catch(() => {});
     await this.recordInstallBaseline(work);
 
-    await fsp.rm(path.join(this.kernelsRoot, 'chrome-for-testing'), { recursive: true, force: true }).catch(() => {});
-
     this.onProgress({ phase: 'done', message: 'Google Chrome Stable 已就绪', version, binary });
-    return this.resolveInstalled();
+    return kernelCandidate(SOURCE_CHROME_STABLE, binary, version);
   }
 
   installChromeForTesting(release) {
@@ -2145,12 +2183,15 @@ class BrowserKernelManager {
     }
     try {
       const release = await this.fetchChromeStableRelease();
-      const needsUpdate = !installed || installed.source !== SOURCE_CHROME_STABLE;
+      const available = release.source === SOURCE_CFT
+        ? [installed, ...this.listInstalledKernels()].some((kernel) =>
+          kernel?.source === SOURCE_CFT && kernel.version === release.version)
+        : installed?.source === SOURCE_CHROME_STABLE;
       return {
         installed,
         remote: { version: release.version, source: release.source, url: release.url, platform: release.platform },
-        needsUpdate,
-        upToDate: Boolean(installed) && !needsUpdate,
+        needsUpdate: !available,
+        upToDate: available,
         autoDownload: true,
       };
     } catch (error) {

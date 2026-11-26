@@ -1,6 +1,7 @@
 "use strict";
 const fs=require('node:fs/promises'),path=require('node:path'),{promisify}=require('node:util'),{execFile}=require('node:child_process');
 const {writeRawAtomically}=require('../engine/state-storage'),{buildExecLine,resolveLaunchBinary}=require('../automation/linux-autostart');
+const { navigateFirefoxContext } = require('../automation/firefox-fingerprint');
 function parseLaunch(args){
  const id=args.find(arg=>arg.startsWith('--openbrowser-profile='))?.slice(22),urls=args.filter(arg=>/^https?:\/\//i.test(arg));
  if(id&&!/^[a-zA-Z0-9_-]{1,100}$/.test(id))throw Error('无效启动窗口 ID');
@@ -67,7 +68,10 @@ async function openLaunch(engine,request,defaultId){
  // for a user who just clicked an OS link.
  if(!item)throw Error('浏览器启动后立即退出，未能打开网址，请重试或检查窗口配置');
  for(const url of request.urls){
-  if(item.engine==='firefox'){const {context}=await item.bidiConnection.command('browsingContext.create',{type:'tab'});await item.bidiConnection.command('browsingContext.navigate',{context,url,wait:'complete'});}
+  if(item.engine==='firefox'){
+   const {context}=await item.bidiConnection.command('browsingContext.create',{type:'tab'});
+   await navigateFirefoxContext(item.bidiConnection,context,url);
+  }
   else await require('../cdp').newTab(item.port,url);
  }
  return true;

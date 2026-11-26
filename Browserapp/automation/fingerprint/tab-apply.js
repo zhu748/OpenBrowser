@@ -11,6 +11,7 @@ const { buildInjectionScript, injectSourceKeyCached, injectionCacheKeyFor } = re
 const { resolveProfileGeolocation } = require('./geolocation-policy');
 const { resolveProfileTimezone } = require('../locale-from-country');
 const { assertFingerprintConsistency } = require('./persona');
+const { injectionTimezone } = require('./injection-config');
 
 // Registrations belong to a CDP connection/session, not just a target ID.
 // Weak owners are released with the connection; live targets are never evicted.
@@ -45,7 +46,6 @@ function forgetFingerprintTarget(owner, key, scope) {
 }
 
 async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile = {}, options = {}) {
-  assertFingerprintConsistency(fp);
   if (typeof cdpCall !== 'function') throw new Error('CDP call function required');
   const owner = options.registrationOwner || cdpCall;
   const key = targetKey(webSocketDebuggerUrl, options);
@@ -73,7 +73,8 @@ async function applyFingerprintToTab(cdpCall, webSocketDebuggerUrl, fp, profile 
 async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options, state) {
   assertFingerprintConsistency(fp);
   if (state.registrationError) throw state.registrationError;
-  const timezone = Object.hasOwn(fp, 'timezone') ? (fp.timezone || '') : resolveProfileTimezone(profile);
+  const timezone = Object.hasOwn(fp, 'timezone')
+    ? injectionTimezone(fp) || '' : resolveProfileTimezone(profile);
   const { position, permission } = resolveProfileGeolocation(profile, fp.geoPermission);
 
   // cdpCall may be:
@@ -85,14 +86,6 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
     return cdpCall(webSocketDebuggerUrl, method, params);
   };
 
-  // The evaluated copy for an ephemeral document drops the font payload (see
-  // buildInjectionScript livePatch). It is built BEFORE the full source so the
-  // fp.fontBlobBridge side effect ends up matching the full script's laziness
-  // policy — the binding registration the engine makes from that value must
-  // agree with the document-start script that actually runs on later navigations.
-  const livePatchSource = options.livePatchDocument === true
-    ? buildInjectionScript(fp, { livePatch: true })
-    : null;
   const source = buildInjectionScript(fp);
   const fpKey = injectSourceKeyCached(injectionCacheKeyFor(fp), source);
   // CDP overrides also depend on profile-only fields absent from the JS
@@ -299,8 +292,10 @@ async function applyToTarget(cdpCall, webSocketDebuggerUrl, fp, profile, options
   state.applied = { fpKey, nativeKey, roleKey, identifier: scriptIdentifier, documentStartOk, evaluated: false };
   let evaluatedOk = Boolean(sameConfig && injectState.evaluated);
   if (!options.skipEvaluate && !options.isWaiting && (!evaluatedOk || forceInject)) {
+    // Only an already-open ephemeral document needs the smaller font payload.
+    const expression = options.livePatchDocument ? buildInjectionScript(fp, { livePatch: true }) : source;
     const evaluated = await invoke('Runtime.evaluate', {
-      expression: livePatchSource || source,
+      expression,
       returnByValue: false,
       awaitPromise: false,
     });

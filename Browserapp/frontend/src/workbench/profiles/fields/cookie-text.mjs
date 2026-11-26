@@ -28,7 +28,8 @@ function normalizedUnique(cookies) {
   const seen = new Set();
   const result = [];
   for (const cookie of cookies) {
-    const key = JSON.stringify([cookie.name, cookie.domain ?? '', cookie.path || '/', cookie.value ?? '']);
+    const key = JSON.stringify([cookie.name, cookie.domain ?? '', cookie.path || '/', cookie.value ?? '',
+      cookie.partitionKey?.topLevelSite, cookie.partitionKey?.hasCrossSiteAncestor]);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(normalize(cookie));
@@ -177,6 +178,7 @@ function validateCookies(input, options = {}) {
   if (raw.startsWith('[') || raw.startsWith('{')) {
     try {
       const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length === 0) return { valid: true, cookies: [] };
       const cookies = normalizedUnique((Array.isArray(parsed) ? parsed : [parsed]).filter(namedCookie));
       return cookies.length ? { valid: true, cookies } : invalidFormat();
     } catch { return invalidFormat(); }
@@ -197,6 +199,13 @@ const normalizeCookies = value => Array.isArray(value) ? value.filter(namedCooki
 const validCookie = (input, options) => !input || typeof input !== 'string' || validateCookies(input, options).valid;
 
 function formatCookies(value) {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.length ? JSON.stringify(parsed, null, 2) : '';
+    } catch { /* Keep legacy cookie text available for editing. */ }
+    return value;
+  }
   const cookies = normalizeCookies(value);
   return cookies.length ? JSON.stringify(cookies, null, 2) : '';
 }

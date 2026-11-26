@@ -37,6 +37,8 @@ async function run(generation, shortVersion = false) {
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.end(`<!doctype html><script>
       window.firstFingerprint = ${probe};
+      window.firstFingerprint.workArea = [screen.availLeft, screen.availTop, screen.availWidth, screen.availHeight];
+      window.firstFingerprint.dpr = devicePixelRatio;
       const rules = [
         ['device-width', screen.width + 'px'],
         ['device-height', screen.height + 'px'],
@@ -56,7 +58,9 @@ async function run(generation, shortVersion = false) {
   try {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const dntMode = generation === 1 ? 'on' : shortVersion === true ? 'off' : 'default';
-    const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York', dntMode, fingerprint: { screenWidth: 1280, screenHeight: 720, devicePixelRatio: 1.5 } }, advanced: { showInfoPage: false } });
+    const fingerprint = { screenWidth: 1280, screenHeight: 720, availLeft: 40, availTop: 55,
+      devicePixelRatio: shortVersion === 'random' ? 4.5 : 1.5 };
+    const profile = sanitizeProfile({ id: 'firefox-native', fingerprintVersion: generation, name: 'Firefox native', engine: 'firefox', os: 'Windows', width: 1440, height: 900, privacy: { cores: 4, memory: 0, webrtc: 'disabled', fontListMode: 'real', timezoneMode: 'custom', timezone: 'America/New_York', dntMode, fingerprint }, advanced: { showInfoPage: false } });
     // Exercise the default proxy policy without an address, and a nested
     // real override that must restore the native preference.
     if (generation === 1) {
@@ -68,7 +72,7 @@ async function run(generation, shortVersion = false) {
       ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: true, webrtc: 'real',
     };
     if (shortVersion === 'random') {
-      const generated = buildEditorUa({ profiles: new Map(), chooseBrowser: () => ({ version }) }, { engine: 'firefox', os: 'Windows', random: true });
+      const generated = await buildEditorUa({ profiles: new Map(), chooseBrowser: () => ({ version }) }, { engine: 'firefox', os: 'Windows', random: true });
       profile.userAgent = generated.userAgent;
       profile.privacy.fingerprint = { ...profile.privacy.fingerprint, uaGenerated: true, uaReduced: false,
         uaPatchRandomized: generated.uaPatchRandomized };
@@ -113,6 +117,8 @@ async function run(generation, shortVersion = false) {
       assert.equal(realm.timezone, fp.timezone);
       assert.equal(realm.width, fp.screen.width);
       assert.equal(realm.height, fp.screen.height);
+      assert.deepEqual(realm.workArea, [40, 55, 1240, 665]);
+      assert.equal(realm.dpr, fp.screen.devicePixelRatio);
       if (!initialized.warnings.some(warning => warning.includes('不支持原生屏幕覆盖'))) {
         assert.deepEqual(realm.css, ['yes', 'yes', 'yes'], 'native CSS device dimensions and resolution must agree at document start');
       }
@@ -143,6 +149,11 @@ async function run(generation, shortVersion = false) {
     const shot = await routes.routeBrowserScreenshot({ input: { profile_id: profile.id } });
     assert.equal(shot.code, 0);
     assert.equal(Buffer.from(shot.data.data, 'base64').subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+    if (generation === 1) {
+      const blank = await routes.routeBrowserOpenUrl({ input: { profile_id: profile.id, url: 'about:blank' } });
+      assert.equal(blank.code, 0, blank.msg);
+      assert.equal(await evaluateBidi(connection, { context: initialized.context }, 'location.href'), 'about:blank');
+    }
     const exited = new Promise((resolve) => child.once('exit', resolve));
     await connection.command('browser.close', {}, 3000).catch(() => {});
     await exited;
@@ -163,7 +174,7 @@ async function run(generation, shortVersion = false) {
     assert.equal(places.prepare('SELECT count(*) AS n FROM moz_historyvisits').get().n, 0);
     assert.equal(places.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
     places.close();
-    console.log(`Firefox ${version} generation ${generation}: native document-start, iframe first-script, device fields, timezone and HTTP UA verified`);
+    console.log(`Firefox ${version} generation ${generation}: document-start, iframe first-script, work area, DPR=${fp.screen.devicePixelRatio}, timezone and HTTP UA verified`);
     console.log('Workers: not certified by this document/iframe gate; capability remains best-effort.');
   } finally {
     connection?.close();

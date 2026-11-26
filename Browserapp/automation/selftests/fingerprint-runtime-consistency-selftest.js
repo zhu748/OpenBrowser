@@ -7,7 +7,9 @@ const { buildFingerprint, buildInjectionScript, buildWorkerInjectionScript, appl
 const documentBootstrap = require('../fingerprint/runtime/document-bootstrap');
 const workerBootstrap = require('../fingerprint/runtime/worker-bootstrap');
 const { LIVE_PROBE_EXPRESSION } = require('../fingerprint-debug-log');
+const { buildDocumentDeliveryProbe } = require('../fingerprint/delivery-probe');
 const { evaluateFingerprintDelivery } = require('../request-header-rewriter');
+const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 
 let passed = 0;
 async function test(name, run) { await run(); passed += 1; console.log('PASS ' + name); }
@@ -68,6 +70,36 @@ function networkRealm(fp, worker, expose = true) {
 }
 
 (async () => {
+  await test('the live delivery probe requires the script installed for the exact fingerprint', async () => {
+    const fp = buildFingerprint(profile('document-delivery-marker'));
+    const { scope } = networkRealm(fp, false);
+    const healthy = await vm.runInContext(buildDocumentDeliveryProbe(fp), scope);
+    assert.equal(healthy.userAgent, fp.userAgent);
+    const wrong = buildFingerprint(profile('different-marker'));
+    for (const [fingerprint, context] of [[fp, vm.createContext({})], [wrong, scope]]) {
+      const failed = await vm.runInContext(buildDocumentDeliveryProbe(fingerprint), context);
+      assert.match(failed.probeError, /未完成安装/);
+    }
+    assert.equal(vm.runInContext(buildDocumentDeliveryProbe(fp, { paused: true }), scope).userAgent, fp.userAgent);
+  });
+  await test('system timezone and real GPU are shared across document and worker configuration', async () => {
+    const sourceProfile = profile('native-timezone-and-gpu', { timezoneMode: 'real', webglMeta: 'real', webgpu: 'webgl' });
+    const fp = buildFingerprint(sourceProfile);
+    assert.deepEqual(fp.webgpu, { mode: 'real', gpu: null });
+    fp.dynamicConfig.timezone = 'Pacific/Kiritimati';
+    for (const worker of [false, true]) {
+      const { scope, source } = networkRealm(fp, worker);
+      assert.match(source, /"webgpu":\{"mode":"real","gpu":null\}/);
+      assert.equal(vm.runInContext('Intl.DateTimeFormat().resolvedOptions().timeZone', scope),
+        Intl.DateTimeFormat().resolvedOptions().timeZone);
+    }
+    const calls = [];
+    await applyFingerprintToTab(async (method, params) => {
+      calls.push({ method, params });
+      return { identifier: 'script' };
+    }, null, fp, sourceProfile);
+    assert.ok(!calls.some(call => call.method === 'Emulation.setTimezoneOverride'));
+  });
   await test('runtime auto/force/off and prefix exceptions agree in documents and workers', () => {
     for (const [mode, host, active] of [['auto', 'www.amazon.com', true], ['auto', 'example.test', false],
       ['force', 'example.test', true], ['off', 'www.amazon.com', false], ['force', 'cdn.amazon.com', false]]) {
@@ -153,8 +185,8 @@ function networkRealm(fp, worker, expose = true) {
     assert.ok(drifted.mismatches.some((m) => m.field === 'connection.rtt'));
     assert.ok(drifted.mismatches.some((m) => m.field === 'connection.downlinkMax'));
   });
-  await test('desktop metrics explicitly apply DPR=1/1.5/2 with live viewport dimensions', async () => {
-    for (const dpr of [1, 1.5, 2]) {
+  await test('desktop metrics explicitly apply saved DPR with live viewport dimensions', async () => {
+    for (const dpr of [1, 1.5, 2, 4.5]) {
       const p = profile('metrics-' + dpr, { fingerprint: { devicePixelRatio: dpr } });
       const fp = buildFingerprint(p), commands = [];
       await applyFingerprintToTab(async (method, params) => {
@@ -168,6 +200,46 @@ function networkRealm(fp, worker, expose = true) {
       assert.ok(!commands.some((c) => c.method === 'Emulation.clearDeviceMetricsOverride'));
       assert.ok(commands.indexOf(metrics[0]) < commands.findIndex((c) => c.method === 'Page.addScriptToEvaluateOnNewDocument'));
     }
+  });
+  await test('saved screen work areas fit the panel and preserve a zero-height taskbar', async () => {
+    const custom = (extra) => sanitizeProfile(profile('work-area', { fingerprint: { screenWidth: 1280, screenHeight: 800, ...extra } }));
+    const cases = [
+      [{ availLeft: 40, availTop: 55 }, [40, 55, 1240, 745]],
+      [{ availLeft: 40, availTop: 55, availWidth: 1280, availHeight: 800 }, [40, 55, 1240, 745]],
+      [{ availLeft: 7680, availTop: 7680 }, [1279, 799, 1, 1]],
+      [{ taskbarHeight: 0 }, [0, 0, 1280, 800]],
+    ];
+    for (const [settings, expected] of cases) {
+      const p = custom(settings), fp = buildFingerprint(p);
+      assertFingerprintConsistency(fp);
+      const { scope } = networkRealm(fp, false);
+      const live = await vm.runInContext(LIVE_PROBE_EXPRESSION, scope);
+      const { availLeft, availTop, availWidth, availHeight } = live.screenWorkArea;
+      assert.deepEqual([availLeft, availTop, availWidth, availHeight], expected);
+      const delivered = evaluateFingerprintDelivery(p, fp, live, { strict: true });
+      assert.ok(!delivered.mismatches.some((m) => m.field.startsWith('screen.')));
+      live.screenWorkArea.availHeight += 1;
+      const drift = evaluateFingerprintDelivery(p, fp, live, { strict: true });
+      assert.ok(drift.mismatches.some((m) => m.field === 'screen.availHeight'));
+    }
+  });
+  await test('following the display disables stored custom geometry and DPR until custom is selected again', () => {
+    const custom = sanitizeProfile(profile('switch-display', { fingerprint: {
+      screenWidth: 1280, screenHeight: 800, availLeft: 40, availWidth: 1240, devicePixelRatio: 4.5,
+    } }));
+    const system = { ...custom, privacy: { ...custom.privacy, resolutionMode: 'real' } };
+    const hostScreen = { width: 1440, height: 900, availLeft: 0, availTop: 20, availWidth: 1440, availHeight: 880, devicePixelRatio: 1.5 };
+    const real = buildFingerprint({ ...system, hostScreen });
+    assertFingerprintConsistency(real);
+    for (const [key, value] of Object.entries(hostScreen)) assert.equal(real.screen[key], value, key);
+    const fallback = buildFingerprint(system);
+    assert.deepEqual(fallback.screen, buildFingerprint({ ...system, privacy: { ...system.privacy, fingerprint: {} } }).screen);
+    const restored = buildFingerprint({ ...custom, hostScreen });
+    assertFingerprintConsistency(restored);
+    assert.equal(restored.screen.devicePixelRatio, 4.5);
+    assert.equal(restored.screen.availLeft, 40);
+    const mobile = buildFingerprint({ ...custom, os: 'Android' });
+    assert.equal(mobile.mobileDevice.dpr, mobile.screen.devicePixelRatio);
   });
   await test('resizing the viewport cannot change the declared screen or available display', () => {
     const fp = buildFingerprint(profile('stable-display'));

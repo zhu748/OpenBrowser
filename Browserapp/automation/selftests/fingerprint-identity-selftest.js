@@ -58,8 +58,8 @@ function scopeFor(fp) {
     const userAgent = ua('161.0.44', '161.0');
     assert.equal(buildFirefoxFingerprint(profile({ engine: 'firefox', userAgent }), '161.0').userAgent, userAgent);
   });
-  await test('editor UA changes, clear and random reset cannot retain stale metadata or hidden overrides', () => {
-    const generated = buildEditorUa(engine, { os: 'windows' });
+  await test('editor UA changes, clear and random reset cannot retain stale metadata or hidden overrides', async () => {
+    const generated = await buildEditorUa(engine, { os: 'windows' });
     const current = profile({ userAgent: generated.userAgent, privacy: { fingerprint: { userAgent: generated.userAgent, clientHints: generated.clientHints, uaGenerated: true } } });
     const kept = resolveEditorUaDraft({ current, userAgent: generated.userAgent });
     assert.equal(kept.fingerprint.uaGenerated, true);
@@ -75,10 +75,10 @@ function scopeFor(fp) {
     assert.equal(saved.fingerprint.uaGenerated, true);
     assert.equal(saved.fingerprint.clientHints.ua_full_version, version);
   });
-  await test('mobile UA generation survives the real sanitizer and selects the same device at launch', () => {
+  await test('mobile UA generation survives the real sanitizer and selects the same device at launch', async () => {
     for (const os of ['Android', 'iOS']) {
       for (const random of [false, true]) {
-        const generated = buildEditorUa(engine, { os, random, deviceSeed: 4711, fingerprintVersion: 3 });
+        const generated = await buildEditorUa(engine, { os, random, deviceSeed: 4711, fingerprintVersion: 3 });
         const draft = resolveEditorUaDraft({ userAgent: generated.userAgent, generatedUa: generated });
         const saved = profile({ os, fingerprintVersion: 3, userAgent: draft.userAgent,
           privacy: { fontListMode: 'real', fingerprint: draft.fingerprint } });
@@ -141,9 +141,9 @@ function scopeFor(fp) {
     const conflicting = buildFingerprint(profile({ os: 'Android', userAgent: ua, privacy: { fingerprint: { clientHints: { model: 'SM-G990B', platform_version: '16.0.0' } } } }));
     assert.throws(() => assertFingerprintConsistency(conflicting), { code: 'FINGERPRINT_CONFIG_INVALID' });
   });
-  await test('strict mode replaces stale UA and all Client Hints version fields, including same-major builds', () => {
+  await test('strict mode replaces stale UA and all Client Hints version fields, including same-major builds', async () => {
     for (const old of ['120.0.6099.199', '149.0.1111.1']) {
-      const ua = buildEditorUa(engine, { os: 'windows' }).userAgent.replace(/Chrome\/[\d.]+/, 'Chrome/' + old);
+      const ua = (await buildEditorUa(engine, { os: 'windows' })).userAgent.replace(/Chrome\/[\d.]+/, 'Chrome/' + old);
       const fp = buildFingerprint({ ...profile({ userAgent: ua, privacy: { fingerprint: { uaStrict: true, clientHints: { ua_full_version: old } } } }), kernelVersion: version });
       assert.match(fp.userAgent, /Chrome\/149\.0\.0\.0/);
       assert.equal(fp.userAgentMetadata.fullVersion, version);
@@ -151,24 +151,24 @@ function scopeFor(fp) {
       assertFingerprintConsistency(fp);
     }
   });
-  await test('generated UA follows kernel upgrades while custom UA intent remains explicit', () => {
-    const generated = buildEditorUa(engine, { os: 'windows' });
+  await test('generated UA follows kernel upgrades while custom UA intent remains explicit', async () => {
+    const generated = await buildEditorUa(engine, { os: 'windows' });
     assert.equal(generated.kernelBound, true);
     const saved = profile({ userAgent: generated.userAgent, privacy: { fingerprint: { uaGenerated: generated.kernelBound, clientHints: generated.clientHints } } });
     const fp = buildFingerprint({ ...saved, kernelVersion: '150.0.9999.1' });
     assert.match(fp.userAgent, /Chrome\/150\.0\.0\.0/);
     assert.equal(fp.userAgentMetadata.fullVersion, '150.0.9999.1');
     assertFingerprintConsistency(fp);
-    const custom = buildEditorUa(engine, { os: 'windows', userAgent: generated.userAgent });
+    const custom = await buildEditorUa(engine, { os: 'windows', userAgent: generated.userAgent });
     assert.equal(custom.kernelBound, false);
-    const versioned = buildEditorUa(engine, { os: 'windows', osVersion: '7', random: true });
+    const versioned = await buildEditorUa(engine, { os: 'windows', osVersion: '7', random: true });
     assert.match(versioned.userAgent, /Windows NT 6.1/);
     assert.equal(versioned.metadata.platformVersion, '1.0.0');
     assert.equal(buildUaProfile({ os: 'macOS', osVersion: '14.5' }).metadata.platformVersion, '14.5.0');
     assert.equal(buildUaProfile({ os: 'android', userAgent: 'Mozilla/5.0 (Linux; Android 14.1; SM-G990B) Chrome/149.0.0.0 Mobile' }).metadata.platformVersion, '14.1.0');
   });
   await test('cross-OS UA and metadata version contradictions fail before any target command', async () => {
-    const generated = buildEditorUa(engine, { os: 'windows' });
+    const generated = await buildEditorUa(engine, { os: 'windows' });
     const mixed = buildFingerprint(profile({ os: 'Linux', userAgent: generated.userAgent }));
     assert.equal(mixed.consistency.ok, false);
     let calls = 0;

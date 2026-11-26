@@ -38,10 +38,9 @@ const CHROMIUM_CATALOG_URL = 'https://googlechromelabs.github.io/chrome-for-test
 const CHROMIUM_CATALOG_MAX_BYTES = 12 * 1024 * 1024;
 const CHROMIUM_CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 /**
- * Majors kept in the UI list, newest major first. The CfT feed carries dozens
- * of point builds per major; mainstream fingerprint browsers offer one kernel
- * per major (Chrome 146/147/148/149/150…), so the catalog keeps the newest
- * known-good build of each major instead of a flat stream of builds.
+ * Majors displayed by default, newest first. The kernel manager also exposes
+ * the remaining majors as historical versions. Both groups use one build per
+ * major.
  */
 const CHROMIUM_CATALOG_MAJOR_LIMIT = 15;
 
@@ -314,7 +313,17 @@ function firefoxStartupArgs({ root, startUrl, extraUrls, headless, remoteDebuggi
   return args;
 }
 
+function assertBrowserKernelMajor(selectedVersion, reportedVersion) {
+  const selected = String(selectedVersion || '').match(/^\d+/)?.[0];
+  const reported = String(reportedVersion || '').match(/^(?:[^/]+\/)?(\d+)/)?.[1];
+  if (selected && reported && selected !== reported) {
+    throw Object.assign(new Error(`浏览器实际内核主版本为 ${reported}，配置版本为 ${selected}。请重新检测或选择内核后再启动。`),
+      { code: 'KERNEL_VERSION_MISMATCH' });
+  }
+}
+
 module.exports = {
+  assertBrowserKernelMajor,
   CHROMIUM_CATALOG_URL,
   CHROMIUM_CATALOG_MAX_BYTES,
   CHROMIUM_CATALOG_TTL_MS,

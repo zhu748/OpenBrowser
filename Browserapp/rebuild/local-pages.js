@@ -67,6 +67,8 @@ export const Kernels = {
       custom = ref(""),
       family = ref("chromium"),
       versions = ref([]),
+      historicalVersions = ref([]),
+      showHistorical = ref(false),
       version = ref(""),
       busy = ref(false),
       error = ref(""),
@@ -87,6 +89,7 @@ export const Kernels = {
     const load = async () => {
       rows.value = await ipc("kernels:list");
     };
+    const readVersion = (row) => String(row.version || row);
     const loadVersions = async () => {
       const request = ++versionRequest, selectedFamily = family.value;
       busy.value = ++pending > 0;
@@ -94,12 +97,23 @@ export const Kernels = {
       try {
         const response = await globalThis.ops.kernelListVersions(selectedFamily, true);
         if (disposed || request !== versionRequest || family.value !== selectedFamily) return;
-        const list = Array.isArray(response) ? response : response.versions || [];
-        versions.value = list;
-        version.value = String(list[0]?.version || list[0] || "");
+        const catalog = Array.isArray(response) ? { versions: response } : response;
+        versions.value = (catalog.versions || []).map(readVersion);
+        historicalVersions.value = (catalog.historicalVersions || []).map(readVersion);
+        showHistorical.value = showHistorical.value && historicalVersions.value.length > 0;
+        if (!versions.value.includes(version.value) &&
+          !(showHistorical.value && historicalVersions.value.includes(version.value))) {
+          version.value = versions.value[0] || "";
+        }
       } catch (e) {
         if (!disposed && request === versionRequest && family.value === selectedFamily) error.value = e.message;
       } finally { busy.value = --pending > 0; }
+    };
+    const toggleHistorical = () => {
+      showHistorical.value = !showHistorical.value;
+      if (!showHistorical.value && historicalVersions.value.includes(version.value)) {
+        version.value = versions.value[0] || "";
+      }
     };
     onMounted(() => {
       load().catch((e) => (error.value = e.message));
@@ -160,7 +174,7 @@ export const Kernels = {
             { disabled: !custom.value || busy.value },
           ),
         ]),
-        h("div", { class: "flex gap-2 items-center" }, [
+        h("div", { class: "flex flex-wrap gap-2 items-center" }, [
           h(
             "select",
             {
@@ -170,6 +184,8 @@ export const Kernels = {
                 versionRequest++;
                 family.value = e.target.value;
                 versions.value = [];
+                historicalVersions.value = [];
+                showHistorical.value = false;
                 version.value = "";
               },
             },
@@ -186,14 +202,18 @@ export const Kernels = {
               value: version.value,
               onChange: (e) => (version.value = e.target.value),
             },
-            versions.value.map((v) =>
-              h(
-                "option",
-                { value: String(v.version || v) },
-                String(v.version || v),
-              ),
-            ),
+            [
+              ...versions.value.map((v) => h("option", { value: v }, v)),
+              showHistorical.value
+                ? h("optgroup", { label: "历史版本" },
+                    historicalVersions.value.map((v) => h("option", { value: v }, v)))
+                : null,
+            ],
           ),
+          historicalVersions.value.length
+            ? btn(showHistorical.value ? "收起历史版本" : `显示历史版本（${historicalVersions.value.length}）`,
+                toggleHistorical, { disabled: busy.value, "aria-expanded": showHistorical.value })
+            : null,
           btn(
             "安装所选版本",
             () =>

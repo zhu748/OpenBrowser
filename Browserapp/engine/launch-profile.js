@@ -2,6 +2,12 @@
 
 // Revision-checked launch publication and persistent identity migration, shared by both engines.
 const crypto = require("node:crypto");
+const { profileWriteGuard } = require("./profile-write-guard");
+
+async function readKernelVersion(engine, browser) {
+  return engine.kernelManager?.readInstalledVersion
+    ? engine.kernelManager.readInstalledVersion(browser) : browser.version;
+}
 
 function mergeLaunchProfileUpdate(engine, snapshot, assertCurrent) {
   if (!snapshot || typeof snapshot !== "object") return null;
@@ -83,4 +89,20 @@ async function ensureLegacyFingerprintSeed(engine, profile) {
   return true;
 }
 
-module.exports = { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed };
+async function prepareLaunchFingerprintSeed(engine, profile, assertCurrent) {
+  assertCurrent();
+  const pending = ensureLegacyFingerprintSeed(engine, profile);
+  let guard;
+  try {
+    guard = profileWriteGuard(engine, profile.id);
+  } catch (error) {
+    // The seed writer can already be running when a maintenance check fails.
+    await pending.catch(() => {});
+    throw error;
+  }
+  await pending;
+  guard();
+  return guard;
+}
+
+module.exports = { mergeLaunchProfileUpdate, ensureLegacyFingerprintSeed, prepareLaunchFingerprintSeed, readKernelVersion };

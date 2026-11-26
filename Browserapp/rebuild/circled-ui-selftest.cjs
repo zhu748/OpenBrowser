@@ -97,8 +97,9 @@ const repo = path.resolve(__dirname, "../..");
     await page.screenshot({ path: path.join(evidence, "circled-updates.png") });
     await page.keyboard.press("Escape");
     await page.evaluate(() =>
-      globalThis.__localRequest("activity:append", {
-        action: "circled_ui_verification",
+      globalThis.__localRequest("notifications:append", {
+        title: "本地通知验证",
+        message: "circled_ui_verification",
       }),
     );
     await page.getByRole("button", { name: "通知", exact: true }).click();

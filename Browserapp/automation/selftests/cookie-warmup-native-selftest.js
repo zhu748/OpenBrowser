@@ -5,9 +5,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const http = require('node:http');
+const cdp = require('../../cdp');
 const { BrowserEngine } = require('../../engine');
 const { RpaEngine } = require('../rpa-engine');
 const { RpaStore } = require('../rpa-store');
+const { LocalService } = require('../../rebuild/local-service');
 const { startCookieWarmup } = require('../cookie-warmup');
 const credentialCrypto = require('../../credential-crypto');
 const { chooseChromiumBinary, Unavailable } = require('./native-gate-harness');
@@ -34,6 +36,9 @@ async function main() {
       res.setHeader('Set-Cookie', 'warmup_test=accepted; Path=/; Max-Age=86400');
       res.setHeader('Content-Type', 'text/html');
       res.end('<html><body style="height:5000px">Warmup<img src="/blocked.png"><video autoplay preload="auto" src="/blocked.mp4"></video></body></html>');
+    } else if (req.url === '/external-close') {
+      res.setHeader('Set-Cookie', 'external_close=recorded; Path=/');
+      res.end('Close test');
     } else { if (req.url === '/blocked.png') images++; if (req.url === '/blocked.mp4') videos++; res.end('asset'); }
   });
   const engine = new BrowserEngine({ getPath: () => root });
@@ -47,6 +52,15 @@ async function main() {
     await engine.init();
     await engine.kernelManager.setCustomBinary(wrapper);
     await store.load();
+    const invalid = { id: 'invalid-fingerprint', name: 'Invalid fingerprint', os: 'Linux', engine: 'chromium',
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/2.0.0.0 Safari/537.36',
+      advanced: { clearCookiesOnStart: true, saveCookies: false } };
+    await engine.syncProfiles([invalid]);
+    const cookiePath = path.join(engine.profileRoot(invalid.id), 'Default', 'Network', 'Cookies');
+    await fs.mkdir(path.dirname(cookiePath), { recursive: true });
+    await fs.writeFile(cookiePath, 'existing cookies');
+    await assert.rejects(engine.start(invalid), { code: 'FINGERPRINT_CONFIG_INVALID' });
+    assert.equal(await fs.readFile(cookiePath, 'utf8'), 'existing cookies');
     await engine.syncProfiles([{ id: 'warmup-native', name: 'Warmup test', engine: 'chromium', proxy: 'Direct', networkMode: 'direct', advanced: { startUrls: 'about:blank' } }]);
     const result = await startCookieWarmup({ engine, rpaStore: store, rpaEngine: rpa }, {
       profileId: 'warmup-native', urls: ['http://127.0.0.1:' + server.address().port + '/warm'],
@@ -69,12 +83,25 @@ async function main() {
     const profile = engine.profiles.get('warmup-native');
     assert.equal(profile.advanced.blockImages, false, 'temporary task policy cannot overwrite saved profile settings');
     assert.equal(profile.advanced.headless, undefined);
-    // Cookie snapshots in the config are opt-in for cloud backup. The
-    // browser's own persistent cookie store must survive without that opt-in.
+    assert.equal(profile.advanced.cloudBackup, false);
+    assert.ok(JSON.parse(profile.cookies).some(cookie => cookie.name === 'warmup_test' && cookie.value === 'accepted'));
     await engine.start(profile, { headless: true });
-    const { cookies } = await engine.running.get(profile.id).cdpConnection.command('Storage.getCookies', {}, { timeout: 5000 });
+    const item = engine.running.get(profile.id);
+    const { cookies } = await item.cdpConnection.command('Storage.getCookies', {}, 5000);
     assert.ok(cookies.some((cookie) => cookie.name === 'warmup_test' && cookie.value === 'accepted'));
-    await engine.stop(profile.id);
+    engine.clearRunningWatch(item);
+    await item.cookieCapture;
+    const [tab] = await cdp.tabs(item.port);
+    await cdp.call(tab.webSocketDebuggerUrl, 'Page.navigate', { url: 'http://127.0.0.1:' + server.address().port + '/external-close' });
+    for (let i = 0; i < 30 && !item.cookieSnapshot?.includes('external_close'); i++) await delay(100);
+    assert.ok(item.cookieSnapshot?.includes('external_close'), 'a Set-Cookie response refreshes the snapshot between watchdog ticks');
+    await item.cdpConnection.command('Browser.close', {}, 2000).catch(() => {});
+    for (let i = 0; i < 100 && engine.running.has(profile.id); i++) await delay(100);
+    assert.equal(engine.running.has(profile.id), false);
+    const service = new LocalService({ engine, root: path.join(root, 'workbench') });
+    const { cookie } = await service.request('profiles:read', { id: profile.id });
+    const cookieText = await import('../../frontend/src/workbench/profiles/fields/cookie-text.mjs');
+    assert.ok(cookieText.o(cookie).includes('external_close'), 'manual browser exit is visible in the editor');
     console.log('COOKIE_WARMUP_NATIVE_SELFTEST OK (real engine, persisted task, local visit, cookies, headless spawn, image/video blocking, auto-close, unchanged saved policy)');
   } finally {
     await rpa.stop();

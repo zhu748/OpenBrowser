@@ -60,6 +60,13 @@ async function main() {
   assert.equal(extensionPathKey('C:\\Tools\\Extension', 'win32'), extensionPathKey('c:\\tools\\extension', 'win32'));
   assert.notEqual(extensionPathKey('/tmp/Extension', 'linux'), extensionPathKey('/tmp/extension', 'linux'));
   const wantedPath = path.resolve('Extension'), oldPath = path.resolve('extension');
+  const desired = [{ id: 'assigned', path: wantedPath }];
+  const unavailable = { async command(method) { throw Error(`'${method}' wasn't found`); } };
+  const fallback = await reconcileOnConnection(unavailable, desired);
+  assert.equal(fallback.skipped, true);
+  assert.deepEqual(fallback.installed, [{ ...desired[0], chromeExtensionId: null }]);
+  await assert.rejects(reconcileOnConnection({ async command() { throw Error('connection closed'); } }, desired),
+    /connection closed/);
   let extensions = [{ id: 'old', path: oldPath, enabled: true }];
   const commands = [];
   const connection = { async command(method, params = {}) {
@@ -69,7 +76,7 @@ async function main() {
     if (method === 'Extensions.loadUnpacked') { extensions.push({ id: 'new', path: params.path, enabled: true }); return { id: 'new' }; }
     return {};
   } };
-  const result = await reconcileOnConnection(connection, [{ id: 'assigned', path: wantedPath }], [wantedPath, oldPath]);
+  const result = await reconcileOnConnection(connection, desired, [wantedPath, oldPath]);
   if (process.platform === 'win32') {
     assert.equal(result.installed[0].chromeExtensionId, 'old');
     assert.equal(commands.includes('Extensions.uninstall'), false);

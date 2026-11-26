@@ -152,12 +152,12 @@ async function main() {
     engine.kernelManager.meta.pin = { engine: 'firefox', version: '153.6.0esr', path: esr };
     assert.equal(engine.chooseBrowser({ engine: 'chromium', engineVersion: '156.0.8078.80' }).path, chromeNew);
     assert.equal(engine.chooseBrowser({ engine: 'firefox', engineVersion: 'latest' }).path, esr);
-    assert.match(buildEditorUa(engine, { engine: 'firefox', engineVersion: '160.0' }).userAgent, /Firefox\/160\.0/);
-    assert.equal(buildEditorUa(engine, { engine: 'chromium', engineVersion: '156.0.8078.80' }).kernelVersion, '156.0.8078.80');
+    assert.match((await buildEditorUa(engine, { engine: 'firefox', engineVersion: '160.0' })).userAgent, /Firefox\/160\.0/);
+    assert.equal((await buildEditorUa(engine, { engine: 'chromium', engineVersion: '156.0.8078.80' })).kernelVersion, '156.0.8078.80');
     for (const family of ['chromium', 'firefox']) {
       const profile = { engine: family, engineVersion: '999.0' };
       assert.throws(() => engine.chooseBrowser(profile), { code: 'KERNEL_VERSION_NOT_INSTALLED' });
-      assert.throws(() => buildEditorUa(engine, profile), { code: 'KERNEL_VERSION_NOT_INSTALLED' });
+      await assert.rejects(buildEditorUa(engine, profile), { code: 'KERNEL_VERSION_NOT_INSTALLED' });
     }
     // Removing a downloaded tree must not silently switch an exact selection.
     await fs.rm(path.join(root, 'kernels', 'chromium-versions', '156.0.8078.80'), { recursive: true });

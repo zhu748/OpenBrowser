@@ -115,10 +115,11 @@ async function configureChrome(page, app, random, evidence) {
   assert.equal(await mac.inputValue(), customMac);
   assert.equal(await vendor.inputValue(), customVendor);
   assert.equal(await renderer.inputValue(), customRenderer);
-  assert.equal(await advanced.locator('#hardwareConcurrent').innerText(), '自动');
-  assert.equal(await advanced.locator('#deviceMemory').innerText(), '自动');
+  const automaticHardware = /^自动 \([\d.]+\)$/;
+  assert.match(await advanced.locator('#hardwareConcurrent').innerText(), automaticHardware);
+  assert.match(await advanced.locator('#deviceMemory').innerText(), automaticHardware);
   await selectOption(page, advanced, 'hardwareConcurrent', '跟随系统');
-  await selectOption(page, advanced, 'hardwareConcurrent', '自动');
+  await selectOption(page, advanced, 'hardwareConcurrent', automaticHardware);
   await selectOption(page, advanced, 'hardwareConcurrent', '32');
   await selectOption(page, advanced, 'deviceMemory', '0.5');
   await setting(advanced, '分辨率').getByRole('button', { name: '自定义', exact: true }).click();
@@ -181,10 +182,38 @@ async function checkCreationTabs(page, app) {
   await waitUntil(() => create.isEnabled());
   assert.equal(await advanced.locator('#hardwareConcurrent').innerText(), '24', 'a pending preview preserves later hardware edits');
   assert.equal(await advanced.locator('#deviceMemory').innerText(), '跟随系统');
-  await page.evaluate(() => globalThis.__router.push('/browser'));
+
+  const webgl = setting(advanced, 'WebGL Info');
+  await webgl.getByRole('button', { name: '自定义', exact: true }).click();
+  const renderer = advanced.locator('textarea[name="webGLRender"]');
+  await renderer.fill(customRenderer);
+  const historyStart = await app.evaluate(() => globalThis.editorPreviewHistory.length);
+  await app.evaluate(() => { globalThis.editorHoldNextPreview = true; });
+  await editor.getByRole('button', { name: '一键随机指纹', exact: true }).click();
+  await waitUntil(() => app.evaluate(() => Boolean(globalThis.editorReleasePreview)));
+  try {
+    await webgl.getByRole('button', { name: '随机', exact: true }).click();
+    await selectOption(page, advanced, 'hardwareConcurrent', /^自动(?: \(\d+\))?$/);
+  } finally {
+    await app.evaluate(() => globalThis.editorReleasePreview());
+  }
+  await waitUntil(() => create.isEnabled());
+  const current = await app.evaluate((_electron, start) => globalThis.editorPreviewHistory.slice(start)
+    .findLast(({ payload }) => payload.randomizeUaVersion && payload.webGLInfo === 1 && payload.hardwareConcurrent === ''), historyStart);
+  assert.ok(current, 'a pending reroll is rebuilt for newer GPU and automatic CPU choices');
+  assert.equal(await renderer.inputValue(), current.row.webGLRender);
+  assert.equal(await advanced.locator('#hardwareConcurrent').innerText(), `自动 (${current.row.hardwareConcurrent})`);
+  await create.click();
+  await page.waitForFunction(() => globalThis.__router.currentRoute.value.path !== '/browser/create');
+  const saved = await app.evaluate((_electron, id) => {
+    const engine = globalThis.editorTestEngine;
+    const profile = engine.profiles.get(id), fp = engine.fingerprintFor(id);
+    return { seed: profile.fingerprintSeed, cores: fp.hardwareConcurrency, renderer: fp.webgl.renderer };
+  }, current.row._fingerprintDraft.profileId);
+  assert.deepEqual(saved, { seed: current.row._fingerprintDraft.seed, cores: Number(current.row.hardwareConcurrent), renderer: current.row.webGLRender });
 }
 
-async function createMobileBatch(page) {
+async function createMobileBatch(page, app) {
   await page.evaluate(() => globalThis.__router.push('/browser/create'));
   await page.getByRole('tab', { name: '批量创建', exact: true }).click();
   const editor = page.locator('.profile-editor-viewport');
@@ -196,6 +225,11 @@ async function createMobileBatch(page) {
   await setting(advanced, '电池模拟').getByRole('button', { name: '开启', exact: true }).click();
   await advanced.locator('input[name="level"]').fill('0.75');
   await setting(advanced, '蓝牙模拟').getByRole('button', { name: '模拟不可用', exact: true }).click();
+  const vendor = 'Google Inc. (ARM)';
+  const renderer = 'ANGLE (ARM, Mali-G715, OpenGL ES 3.2)';
+  await setting(advanced, 'WebGL Info').getByRole('button', { name: '自定义', exact: true }).click();
+  await advanced.locator('input[name="webGLManufacturer"]').fill(vendor);
+  await advanced.locator('textarea[name="webGLRender"]').fill(renderer);
   await selectOption(page, advanced, 'hardwareConcurrent', '20');
   await selectOption(page, advanced, 'deviceMemory', '跟随系统');
   await editor.getByRole('button', { name: '创建窗口', exact: true }).click();
@@ -209,7 +243,13 @@ async function createMobileBatch(page) {
     assert.equal(row.privacy.memory, 0);
     assert.equal(row.privacy.batterySnapshot.level, 0.75);
     assert.equal(row.privacy.fingerprint.bluetooth, 'blocked');
+    assert.equal(row.webGLManufacturer, vendor);
+    assert.equal(row.webGLRender, renderer);
   }
+  const { payload, row: preview } = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1));
+  assert.deepEqual([payload.count, payload.webGLInfo, payload.webGLRender, String(payload.level), payload.openBluetooth],
+    [2, 2, renderer, '0.75', true]);
+  assert.equal(rows.find(row => row.id === preview._fingerprintDraft.profileId).fingerprintSeed, preview._fingerprintDraft.seed);
 }
 
 async function createFromTemplate(page, app) {
@@ -221,6 +261,10 @@ async function createFromTemplate(page, app) {
     content: JSON.stringify({
       os: 'Linux', coreType: 'Chrome', useLatestCore: true, userAgent, _custom_ua: true,
       hardwareConcurrent: '24', deviceMemory: '0', deviceNameSwitch: true, deviceName: 'TEMPLATE-DEVICE',
+      id: 'old-template-window', windowId: 'old-template-window', fingerprintSeed: 'stale-seed',
+      macInfo: true, macAddr: '02:11:22:33:44:55',
+      _fingerprintDraft: { profileId: 'old-template-window', seed: 'stale-seed', version: 4,
+        generated: true, userAgent, generatedHardware: { macAddr: '02:11:22:33:44:55' } },
     }),
   }), userAgent);
   const editor = page.locator('.profile-editor-viewport');
@@ -236,6 +280,7 @@ async function createFromTemplate(page, app) {
     assert.equal(await advanced.locator('#hardwareConcurrent').innerText(), '24');
     assert.equal(await advanced.locator('#deviceMemory').innerText(), '跟随系统');
     assert.equal(await advanced.locator('input[name="deviceName"]').inputValue(), 'TEMPLATE-DEVICE');
+    assert.notEqual(await advanced.locator('input[name="macAddr"]').inputValue(), '02:11:22:33:44:55');
     const basic = await settingsPanel(page, '基础设置');
     await basic.getByRole('button', { name: userAgent, exact: true }).waitFor();
     const name = '模板指纹保存 ' + index;
@@ -248,6 +293,7 @@ async function createFromTemplate(page, app) {
     assert.equal(row.privacy.cores, 24);
     assert.equal(row.privacy.memory, 0);
     assert.equal(row.privacy.deviceName, 'TEMPLATE-DEVICE');
+    assert.equal(row.privacy.mac, '');
     profiles.push(row);
   }
   assert.notEqual(profiles[0].id, profiles[1].id);
@@ -255,11 +301,17 @@ async function createFromTemplate(page, app) {
 }
 
 async function importLargeFile(page, app, root) {
-  const count = 102;
   const prefix = '容量导入回归 ';
   const file = path.join(root, 'large-import.txt');
-  const rows = Array.from({ length: count }, (_, index) =>
-    `windowName=${prefix}${index + 1}\nos=${index === count - 1 ? 'IOS' : 'Linux'}\ncoreType=Chrome`);
+  const version = await page.evaluate(async () => (await globalThis.__localRequest('kernels:list'))
+    .find(row => row.engine === 'firefox').version);
+  const firefoxVersion = version.split('.')[0] + '.0';
+  const customUa = `Mozilla/5.0 (X11; Linux x86_64; rv:${firefoxVersion}) Gecko/20100101 Firefox/${firefoxVersion} ImportTest/1.0`;
+  const rows = Array.from({ length: 101 }, (_, index) => `windowName=${prefix}${index + 1}\nos=Linux\ncoreType=Chrome`);
+  rows.push(`windowName=${prefix}102\nos=IOS\ncoreType=Chrome`,
+    `windowName=${prefix}103\nos=Linux\ncoreType=Firefox\nuserAgent=${customUa}`,
+    `windowName=${prefix}104\nos=Android\ncoreType=Chrome\nuserAgent=`);
+  const count = rows.length;
   await fs.writeFile(file, rows.join('\n####\n'));
   await app.evaluate(({ dialog }, file) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
@@ -281,13 +333,20 @@ async function importLargeFile(page, app, root) {
   imported.sort((a, b) => a.sortNum - b.sortNum);
   assert.deepEqual(imported.map(row => row.name), rows.map(row => row.split('\n')[0].slice('windowName='.length)));
   assert.equal(new Set(imported.map(row => row.seed)).size, count);
-  assert.equal(imported.at(-1).os, 'IOS');
-  assert.equal(imported.at(-1).osVersion, '');
-  assert.match(imported.at(-1).ua, /iPhone; CPU iPhone OS/);
+  assert.equal(imported[101].os, 'IOS');
+  assert.equal(imported[101].osVersion, '');
+  assert.match(imported[101].ua, /iPhone; CPU iPhone OS/);
+  assert.equal(imported[102].ua, customUa);
+  assert.match(imported[103].ua, /Android/);
   const batches = await app.evaluate((_host, start) => globalThis.editorPreviewHistory
-    .slice(start).map(({ payload }) => ({ os: payload.os, count: payload.count, version: payload.osVersion })), previousPreviews);
-  assert.deepEqual(batches.filter(row => row.os === 'Linux').map(row => row.count), [100, 1]);
-  assert.deepEqual(batches.filter(row => row.os === 'IOS'), [{ os: 'IOS', count: 1, version: '' }]);
+    .slice(start).map(({ payload, row }) => ({ os: payload.os, count: payload.count, version: payload.osVersion,
+      core: payload.coreType, requestedUa: payload.userAgent, ua: row.userAgent })), previousPreviews);
+  assert.deepEqual(batches.filter(row => row.os === 'Linux' && row.core === 'Chrome').map(row => row.count), [100, 1]);
+  assert.deepEqual(batches.filter(row => row.os === 'IOS').map(row => [row.count, row.version]), [[1, '']]);
+  const firefox = batches.find(row => row.core === 'Firefox');
+  assert.equal(firefox.requestedUa, customUa);
+  assert.equal(firefox.ua, customUa);
+  assert.equal(batches.find(row => row.os === 'Android').ua, imported[103].ua);
 }
 
 async function main() {
@@ -382,14 +441,15 @@ async function main() {
         assert.equal(latest.payload.os, before.payload.os, 'randomization preserves the chosen OS');
         assert.equal(latest.payload.coreType, family);
         assert.equal(latest.row._fingerprintDraft.seed === before.row._fingerprintDraft.seed, button === singleRandom);
-        if (button === singleRandom) {
+        if (family === 'Chrome') {
           assert.equal(latest.payload.previousUserAgent, previousUa);
           assert.equal(latest.row._fingerprintDraft.uaVersionRandomized, true);
           assert.equal(versionOf(latest.row.userAgent), latest.row._fingerprintDraft.clientHints.ua_full_version);
+          assert.equal(versionOf(latest.row.userAgent).split('.')[0], major);
           const versions = require('../automation/data/chrome-release-versions.json').versions.windows[major] || [];
           if (versions.length > 1) assert.notEqual(latest.row.userAgent, previousUa);
         } else {
-          assert.equal(versionOf(latest.row.userAgent), family === 'Firefox' ? major + '.0' : major + '.0.0.0');
+          assert.equal(versionOf(latest.row.userAgent), major + '.0');
         }
         if (family === 'Chrome')
           assert.equal(latest.row._fingerprintDraft.clientHints.ua_full_version.split('.')[0], major);
@@ -487,10 +547,45 @@ async function main() {
         assert.deepEqual(afterUaEdit, beforeUaEdit, 'UA-only randomization preserves the persisted noise values');
       }
     }
+    const automatic = await page.evaluate(async () => {
+      const request = globalThis.__localRequest;
+      const [draft] = await request('fingerprint:preview', { os: 'Windows', webGLInfo: 1, includeRuntime: false });
+      const row = await request('profiles:create', {
+        ...draft, os: 'Windows', windowName: '自动硬件与Cookie', webGLInfo: 1,
+        cookie: [{ domain: 'example.test', name: 'saved_cookie', value: 'test' }],
+      });
+      await globalThis.__router.push('/browser/edit?id=' + row.id);
+      return { ...draft, id: row.id };
+    });
+    const hardware = await settingsPanel(page, '高级指纹设置');
+    const vendor = hardware.locator('input[name="webGLManufacturer"]');
+    const renderer = hardware.locator('textarea[name="webGLRender"]');
+    assert.equal(await vendor.inputValue(), automatic.webGLManufacturer);
+    assert.equal(await renderer.inputValue(), automatic.webGLRender);
+    assert.equal(await vendor.isEditable(), false);
+    assert.match(await hardware.locator('#hardwareConcurrent').innerText(), /自动 \(\d+\)/);
+    assert.match(await page.locator('textarea').first().inputValue(), /saved_cookie/);
+    const editShuffle = page.getByRole('button', { name: '一键随机指纹', exact: true });
+    const previous = await app.evaluate(() => globalThis.editorPreviewHistory.length);
+    await editShuffle.click();
+    await waitUntil(async () => await app.evaluate(() => globalThis.editorPreviewHistory.length) > previous);
+    const shuffled = await app.evaluate(() => globalThis.editorPreviewHistory.at(-1).row);
+    assert.notEqual(shuffled.userAgent, automatic.userAgent);
+    await setting(hardware, 'WebGL Info').getByRole('button', { name: '自定义', exact: true }).click();
+    assert.equal(await vendor.isEditable(), true);
+    assert.equal(await renderer.isEditable(), true);
+    await vendor.fill(customVendor);
+    await renderer.fill(customRenderer);
+    await page.getByRole('button', { name: '保存', exact: true }).click();
+    await page.getByText('自动硬件与Cookie', { exact: true }).waitFor();
+    const changed = await page.evaluate(id => globalThis.__localRequest('profiles:read', { id }), automatic.id);
+    assert.equal(changed.userAgent, shuffled.userAgent);
+    assert.equal(changed.webGLManufacturer, customVendor);
+    assert.equal(changed.webGLRender, customRenderer);
     console.log('EDITOR_PHASE creation tabs');
     await checkCreationTabs(page, app);
     console.log('EDITOR_PHASE Android batch');
-    await createMobileBatch(page);
+    await createMobileBatch(page, app);
     console.log('EDITOR_PHASE template');
     await createFromTemplate(page, app);
     console.log('EDITOR_PHASE large import');

@@ -2,6 +2,7 @@
 
 const { randomInt } = require('node:crypto');
 const publishedVersions = require('./data/chrome-release-versions.json').versions;
+const FALLBACK_PATCH_RADIUS = 8;
 
 function versionParts(version, engine) {
   const text = String(version || '');
@@ -33,16 +34,37 @@ function publishedVersionsFor(kernelVersion, os) {
   return major && Object.hasOwn(publishedVersions, os) ? publishedVersions[os][major] || [] : [];
 }
 
-function pickPublishedChromeVersion(kernelVersion, os, previousUserAgent) {
+function chromePatchRange(kernelVersion) {
+  const match = String(kernelVersion || '').match(/^([1-9]\d*\.\d+\.[1-9]\d*)\.(0|[1-9]\d*)$/);
+  if (!match) return null;
+  const patch = Number(match[2]);
+  if (!Number.isSafeInteger(patch + FALLBACK_PATCH_RADIUS)) return null;
+  return { prefix: `${match[1]}.`, first: Math.max(0, patch - FALLBACK_PATCH_RADIUS), last: patch + FALLBACK_PATCH_RADIUS };
+}
+
+function pickRandomChromeVersion(kernelVersion, os, previousUserAgent) {
   const previous = productVersion(previousUserAgent, 'chromium');
-  const versions = publishedVersionsFor(kernelVersion, os);
+  let versions = publishedVersionsFor(kernelVersion, os);
+  if (!versions.length) {
+    const range = chromePatchRange(kernelVersion);
+    if (!range) return kernelVersion;
+    versions = Array.from({ length: range.last - range.first + 1 }, (_, index) => range.prefix + (range.first + index));
+  }
   const candidates = versions.length > 1 ? versions.filter(version => version !== previous) : versions;
-  return candidates.length ? candidates[randomInt(candidates.length)] : kernelVersion;
+  return candidates[randomInt(candidates.length)];
 }
 
-function resolvePublishedChromeVersion(kernelVersion, os, userAgent) {
+function resolveRandomChromeVersion(kernelVersion, os, userAgent) {
   const version = productVersion(userAgent, 'chromium');
-  return publishedVersionsFor(kernelVersion, os).includes(version) ? version : kernelVersion;
+  if (publishedVersionsFor(kernelVersion, os).includes(version)) return version;
+  // Preserve a fallback previously chosen for this build even when an updated
+  // catalog supplies published versions for subsequent rerolls.
+  const range = chromePatchRange(kernelVersion);
+  if (range && version?.startsWith(range.prefix)) {
+    const patch = Number(version.slice(range.prefix.length));
+    if (patch >= range.first && patch <= range.last && version === range.prefix + patch) return version;
+  }
+  return kernelVersion;
 }
 
-module.exports = { resolveUaPatchVersion, pickPublishedChromeVersion, resolvePublishedChromeVersion };
+module.exports = { resolveUaPatchVersion, pickRandomChromeVersion, resolveRandomChromeVersion };

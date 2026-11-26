@@ -28,8 +28,50 @@ const { assertUrlAccessPolicySupported } = require('../automation/url-access-pol
 const { runtimePolicyProfile } = require('./runtime-policy');
 const { closePageFingerprintConnections } = require('./fingerprint-transport');
 const { beginProfileStop, observeProfileStop } = require('./profile-lifecycle');
+const { persistProfileSync } = require('./profile-publication');
+
+function shouldSyncCookies(profile) {
+  return profile && !profile.trashed && profile.advanced?.saveCookies !== false
+    && profile.advanced?.syncCookiesOnClose !== false;
+}
 
 module.exports = {
+  captureRunningCookies(item) {
+    const id = item.profile?.id;
+    if (this.running.get(id) !== item || item.cleanedUp || !shouldSyncCookies(this.profiles.get(id))) return;
+    if (item.cookieCapture) return item.cookieCapture;
+    const connection = item.engine === 'firefox' ? item.bidiConnection : item.cdpConnection;
+    if (!connection) return;
+    item.cookieCapture = this.exportProfileCookies(connection, item.engine).then(snapshot => {
+      if (snapshot && this.running.get(id) === item && !item.cleanedUp) item.cookieSnapshot = snapshot;
+    }).finally(() => { item.cookieCapture = null; });
+    return item.cookieCapture;
+  },
+
+  async saveClosingCookies(id, item) {
+    if (!shouldSyncCookies(this.profiles.get(id))) return false;
+    // An event-driven capture may already be in flight. Request one final
+    // snapshot if the browser is still available, then keep the last good one.
+    if (item.cookieCapture) await item.cookieCapture;
+    if (!isChildExited(item.child)) await this.captureRunningCookies(item);
+    const latest = this.profiles.get(id);
+    const snapshot = item.cookieSnapshot;
+    if (this.running.get(id) !== item || !shouldSyncCookies(latest) || !snapshot
+        || (latest.cookies || '') !== (item.profile.cookies || '')) return false;
+    if (snapshot === latest.cookies || (snapshot === '[]' && !latest.cookies)) return true;
+    try {
+      await persistProfileSync(this, {
+        profiles: new Map([[id, { ...latest, cookies: snapshot, updatedAt: new Date().toISOString() }]]),
+        assignments: new Map(),
+        networkInvalidations: [],
+      });
+    } catch (_) {
+      this.emit({ type: 'sync-error', action: 'save-cookies', id, message: 'Cookie 快照写入失败' });
+      return false;
+    }
+    return true;
+  },
+
   cleanupRunningItem(profileId, item, options = {}) {
     if (!item) return Promise.resolve({ id: profileId, running: false });
     if (item.cleanupPromise?.lifecycleSettled) item.cleanupPromise = null;
@@ -62,6 +104,8 @@ module.exports = {
       item.exitCleanupReason ??= reason;
       item.stopping = true;
       this.clearRunningWatch(item);
+      const cookieExported = !wasStopping && reason !== 'start-failed' && ownsSharedResources()
+        ? await this.saveClosingCookies(profileId, item) : false;
       if (ownsSharedResources()) await saveDeferredSession(item, (url) => this.isStartPageUrl?.(url)).catch(() => {});
       item.bidiConnection?.close();
       item.bidiConnection = null;
@@ -176,7 +220,7 @@ module.exports = {
           type: 'profile-closed',
           id: profileId,
           cloudBackup: true,
-          cookieExported: false,
+          cookieExported,
           profile: live,
           lifecycleGeneration: item.lifecycleGeneration,
           reason,
@@ -297,13 +341,20 @@ module.exports = {
    * or never fires child 'exit'. Poll CDP — if port dies or all pages are gone, stop env.
    */
   startRunningWatch(item) {
-    if (!item || item.watchTimer) return;
+    if (!item || item.watchToken || item.cleanedUp || item.stopping) return;
     const profileId = item.profile?.id;
+    const token = Symbol('running watch');
+    item.watchToken = token;
+    const ownsWatch = () => item.watchToken === token && !item.cleanedUp && !item.stopping
+      && this.running.get(profileId) === item;
+    void this.captureRunningCookies?.(item);
     const tick = async () => {
+      if (!ownsWatch()) return;
       item.watchTimer = null;
-      if (item.cleanedUp || item.stopping || !this.running.has(profileId)) return;
+      void this.captureRunningCookies?.(item);
       let pageCount = -1;
       let observedTabs = null;
+      let sessionUrls;
       let cdpAlive = false;
       let processAlive = true;
       if (item.pid) {
@@ -314,20 +365,14 @@ module.exports = {
           processAlive = Boolean(error && (error.code === 'EPERM' || error.code === 'EACCES'));
         }
       }
-      // Firefox runs without CDP: item.port is null for the whole session, so
-      // the CDP probe below must not run for it. http.request on
-      // "http://127.0.0.1:null/json/version" throws "Invalid URL" every tick;
-      // cdpAlive came back false and, after two dead ticks, the watch
-      // force-killed a perfectly healthy Firefox ~7s after launch. Firefox
-      // liveness is the process check above plus the child exit/error
-      // listeners installed by _startFirefox.
+      // Firefox uses its own BiDi connection for liveness and tab snapshots.
       const cdpCapable = Boolean(item.port) && item.engine !== 'firefox';
       if (cdpCapable) {
         try {
           observedTabs = await cdp.tabs(item.port);
           cdpAlive = true;
           pageCount = observedTabs.length;
-          if (pageCount) item.sessionUrls = observedTabs.map((page) => page.url);
+          if (pageCount) sessionUrls = observedTabs.map(page => page.url);
         } catch (_) {
           // A failed list leaves the window count unknown. Check connection
           // liveness independently before scheduling browser cleanup.
@@ -336,19 +381,22 @@ module.exports = {
             cdpAlive = true;
           } catch (_) { cdpAlive = false; }
         }
-      } else if (item.engine === 'firefox' && item.bidiConnection && !item.bidiConnection.closed) {
-        try {
-          const tree = await item.bidiConnection.command('browsingContext.getTree', { maxDepth: 0 }, 2000);
-          if (tree.contexts?.length) item.sessionUrls = tree.contexts.map((context) => context.url);
-          cdpAlive = true;
-        } catch (_) { cdpAlive = false; }
+      } else if (item.engine === 'firefox') {
+        if (item.bidiConnection && !item.bidiConnection.closed) {
+          try {
+            const tree = await item.bidiConnection.command('browsingContext.getTree', { maxDepth: 0 }, 2000);
+            cdpAlive = Array.isArray(tree?.contexts) && tree.contexts.every(context => typeof context?.url === 'string');
+            if (cdpAlive && tree.contexts.length) sessionUrls = tree.contexts.map(context => context.url);
+          } catch (_) { cdpAlive = false; }
+        }
       } else {
         cdpAlive = true;
       }
 
       // Stop may have started while the CDP probes were in flight. Never let a
       // stale watcher callback act on, or reschedule itself for, a torn-down item.
-      if (item.cleanedUp || item.stopping || this.running.get(profileId) !== item) return;
+      if (!ownsWatch()) return;
+      if (sessionUrls) item.sessionUrls = sessionUrls;
 
       if (item.engine === 'firefox') {
         try { assertUrlAccessPolicySupported(runtimePolicyProfile(item.profile, this.profiles?.get?.(profileId)), 'firefox'); }
@@ -374,7 +422,9 @@ module.exports = {
         if (!processAlive || item.watchDeadTicks >= deadThreshold) {
           item.watchKillAttempts = (item.watchKillAttempts || 0) + 1;
           item.watchDeadTicks = 0;
-          this.handleBrowserGone(profileId, item, processAlive ? 'cdp-dead' : 'process-exit', {
+          const protocol = item.engine === 'firefox' ? 'bidi' : 'cdp';
+          const reason = processAlive ? protocol + '-dead' : 'process-exit';
+          this.handleBrowserGone(profileId, item, reason, {
             kill: true,
             waitForExit: true,
           }).catch((error) => this.emit({ type: 'sync-error', action: 'watch-cleanup', id: profileId, message: error.message }));
@@ -391,6 +441,7 @@ module.exports = {
           if (item.watchEmptyTicks >= 2) {
             // Gracefully stop environment so UI matches closed browser
             this.stop(profileId).catch((error) => {
+              if (this.running.get(profileId) !== item) return;
               this.emit({ type: 'sync-error', action: 'auto-stop-empty', id: profileId, message: error.message });
               this.handleBrowserGone(profileId, item, 'empty-windows', {
                 kill: true,
@@ -415,7 +466,7 @@ module.exports = {
               phase: 'watch-ensure',
               observedTabs,
             }).catch((error) => {
-              if (item.cleanedUp || item.stopping || this.running.get(profileId) !== item) return;
+              if (!ownsWatch()) return;
               item.cdpError = `fingerprint injection failed: ${error.message}`;
               // cdpError is part of the public status view (local API reads it
               // directly); this path emits no 'status' event, so invalidate
@@ -434,7 +485,7 @@ module.exports = {
         }
       }
       // 2.4s is enough for new-tab FP inject without burning CDP every 1.2s across fleets.
-      if (!item.cleanedUp && !item.stopping && this.running.get(profileId) === item) {
+      if (ownsWatch()) {
         item.watchTimer = setTimeout(tick, 2400);
       }
     };
@@ -444,6 +495,7 @@ module.exports = {
 
   clearRunningWatch(item) {
     if (!item) return;
+    item.watchToken = null;
     if (item.watchTimer) {
       clearTimeout(item.watchTimer);
       item.watchTimer = null;

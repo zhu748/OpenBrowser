@@ -76,7 +76,12 @@ async function startupHarness(fault) {
   const child = Object.assign(new EventEmitter(), { pid: 999999, exitCode: null, stdout: new EventEmitter(), stderr: new EventEmitter() });
   child.stdout.setEncoding = child.stderr.setEncoding = () => {};
   child.kill = () => { child.killed = true; };
-  const connection = { close() {} };
+  const connection = { close() {},
+    async command(method) {
+      assert.equal(method, 'Browser.getVersion');
+      return { product: fault === 'runtime-version' ? 'Chrome/150.0.0.0' : 'Chrome/149.0.0.0' };
+    },
+  };
   let spawns = 0, persistCalls = 0;
   const actualRequire = Module.createRequire(require.resolve('../../engine/start'));
   let spawnConfig, deliveredFingerprint;
@@ -127,6 +132,10 @@ async function startupHarness(fault) {
     if (fault === 'seed') {
       await assert.rejects(compiled.exports._start.call(engine, p), { code: 'FINGERPRINT_SEED_PERSIST_FAILED' });
       assert.equal(spawns, 0);assert.equal(engine.navigations, 0);assert.equal(engine.startupCleanups, 1);
+    } else if (fault === 'runtime-version') {
+      await assert.rejects(compiled.exports._start.call(engine, p), { code: 'KERNEL_VERSION_MISMATCH' });
+      assert.equal(spawns, 1); assert.equal(engine.navigations, 0); assert.equal(engine.attempts, 0);
+      assert.equal(engine.startupCleanups, 1);
     } else if (fault === 'config' || fault === 'url-config') {
       await assert.rejects(compiled.exports._start.call(engine, p), fault === 'config' ? /指纹配置不一致/ : /无效网站规则/);
       assert.equal(spawns, 0); assert.equal(engine.navigations, 0); assert.equal(engine.running.size, 0);
@@ -249,11 +258,15 @@ async function startupHarness(fault) {
   await test('runtime bookkeeping requires a valid live probe and can recheck without reinjection', async () => {
     const saved = { call: cdp.call, tabs: cdp.tabs, connect: cdp.connect };
     const tab = { id: 'probe-target', url: 'about:blank', webSocketDebuggerUrl: 'ws://127.0.0.1:12345/devtools/page/abcd1234' };
-    let live = liveFor(); let registrations = 0; let probes = 0;
+    let live = liveFor(); let registrations = 0; let probes = 0; let installCheck = false;
     cdp.tabs = async () => [tab];
     cdp.call = async (_url, method, params) => {
       if (method === 'Page.addScriptToEvaluateOnNewDocument') { registrations += 1; return { identifier: 'script' }; }
-      if (method === 'Runtime.evaluate' && params.expression === LIVE_PROBE_EXPRESSION) { probes += 1; return { result: { value: live } }; }
+      if (method === 'Runtime.evaluate' && params.expression.includes(LIVE_PROBE_EXPRESSION)) {
+        probes += 1;
+        installCheck = params.expression.includes("'documentInstalled'");
+        return { result: { value: live } };
+      }
       return {};
     };
     cdp.connect = async (url) => ({ command: (method, params) => cdp.call(url, method, params), close() {} });
@@ -262,6 +275,10 @@ async function startupHarness(fault) {
     try {
       await run(); assert.equal(applied.has(tab.id), true);
       await run({ verifyApplied: true }); assert.equal(probes, 2); assert.equal(registrations, 1);
+      assert.equal(installCheck, true);
+      tab.url = 'http://127.0.0.1/site';
+      await run({ verifyApplied: true });
+      assert.equal(installCheck, false, 'website diagnostics compare live values without depending on the installer check');
       live = null;
       await assert.rejects(run({ verifyApplied: true }), /指纹交付校验失败/);
       assert.equal(applied.has(tab.id), false);
@@ -319,6 +336,44 @@ async function startupHarness(fault) {
         assert.equal(lookups, 0, 'handover is confirmed by the live owner');
         assert.ok(applied.has(tab.id), 'the sweep must preserve the new owner’s verification');
       } finally { Object.assign(cdp, saved); }
+    }
+  });
+  await test('a late probe from a detached CDP session cannot mark or invalidate the new target owner', async () => {
+    const savedTabs = cdp.tabs;
+    const tab = { id: 'swapping-session', url: 'about:blank', webSocketDebuggerUrl: 'ws://localhost/page' };
+    const hash = injection.fingerprintConfigHash(fp);
+    for (const successor of ['closed-tab', 'missing', 'pending', 'different-config', 'verified']) {
+      const started = deferred(), reply = deferred(), applied = new Set([tab.id]);
+      const previous = { async command(method, _params, { sessionId }) {
+        assert.equal(method, 'Runtime.evaluate');assert.equal(sessionId, 'old');
+        started.resolve();return reply.promise;
+      } };
+      const current = {};
+      const trackOn = { fpAppliedHash: hash, fpAppliedTargets: applied, workerFingerprintConnection: previous,
+        fingerprintTargetSessions: new Map([['old', { targetId: tab.id, type: 'page' }]]),
+        fingerprintSessionStates: new Map([['old', { targetId: tab.id, connection: previous, ready: true, fingerprintHash: hash }]]) };
+      cdp.tabs = async () => successor === 'closed-tab' ? [] : [tab];
+      const sweep = runtime.applyRuntimeSettings.call({ networkInfo: new Map() }, 12345, profile, fp, {
+        phase: 'watch-ensure', verifyApplied: true, trackOn, appliedTargetIds: applied, observedTabs: [tab],
+      });
+      const failed = ['missing', 'pending', 'different-config'].includes(successor);
+      const result = failed ? assert.rejects(sweep, { code: 'FINGERPRINT_TARGET_CLOSED' }) : sweep;
+      result.catch(() => {});
+      try {
+        await Promise.race([started.promise, result.then(() => { throw Error('probe never reached the old session'); })]);
+        applied.delete(tab.id);
+        trackOn.workerFingerprintConnection = current;
+        trackOn.fingerprintTargetSessions = new Map();
+        trackOn.fingerprintSessionStates = new Map();
+        if (['pending', 'different-config', 'verified'].includes(successor)) {
+          applied.add(tab.id);
+          trackOn.fingerprintSessionStates.set('new', { targetId: tab.id, connection: current,
+            ready: successor !== 'pending', fingerprintHash: successor === 'different-config' ? 'old-config' : hash });
+        }
+        reply.resolve({ result: { value: liveFor() } });
+        await result;
+        assert.equal(applied.has(tab.id), successor === 'verified', successor);
+      } finally { reply.resolve({});cdp.tabs = savedTabs;await result.catch(() => {}); }
     }
   });
   for (const type of ['worker', 'shared_worker', 'service_worker']) {
@@ -465,6 +520,43 @@ async function startupHarness(fault) {
     try { lifecycle.startRunningWatch.call(engine, item); await tick(); assert.equal(applies, 0); }
     finally { global.setTimeout = savedTimeout; }
   });
+  await test('Firefox watcher cleans up a live process with a closed BiDi connection', async () => {
+    const savedTimeout = global.setTimeout;
+    let tick;
+    global.setTimeout = (fn) => { tick = fn; return 1; };
+    const item = { profile, fingerprint: fp, engine: 'firefox', bidiConnection: { closed: true } };
+    const reasons = [];
+    const engine = { running: new Map([[profile.id, item]]),
+      async handleBrowserGone(_id, _item, reason) { reasons.push(reason); }, emit() {} };
+    try {
+      lifecycle.startRunningWatch.call(engine, item);
+      await tick();
+      assert.deepEqual(reasons, []);
+      await tick();
+      assert.deepEqual(reasons, ['bidi-dead']);
+    } finally { global.setTimeout = savedTimeout; }
+  });
+  await test('clearing a running watcher prevents in-flight probes from scheduling another tick', async () => {
+    const saved = { timeout: global.setTimeout, clearTimeout: global.clearTimeout, tabs: cdp.tabs };
+    const timers = [], probe = deferred();
+    global.setTimeout = (fn) => { timers.push(fn); return timers.length; };
+    global.clearTimeout = () => {};
+    cdp.tabs = () => probe.promise;
+    const item = { profile, engine: 'chromium', port: 12345, sessionUrls: ['about:blank'] };
+    const engine = { running: new Map([[profile.id, item]]), emit() {} };
+    try {
+      lifecycle.startRunningWatch.call(engine, item);
+      const previous = timers[0]();
+      lifecycle.startRunningWatch.call(engine, item);
+      assert.equal(timers.length, 1, 'a polling watcher is still active');
+      lifecycle.clearRunningWatch.call(engine, item);
+      lifecycle.startRunningWatch.call(engine, item);
+      probe.resolve([{ id: 'old', url: 'http://127.0.0.1/old' }]);
+      await previous;
+      assert.equal(timers.length, 2);
+      assert.deepEqual(item.sessionUrls, ['about:blank']);
+    } finally { global.setTimeout = saved.timeout; global.clearTimeout = saved.clearTimeout; cdp.tabs = saved.tabs; }
+  });
   await test('Chromium watcher requires consecutive confirmed empty lists before closing', async () => {
     const saved = { timeout: global.setTimeout, json: cdp.json, tabs: cdp.tabs };
     let tick, listError = false, stops = 0, applies = 0, versionLookups = 0;
@@ -533,6 +625,7 @@ async function startupHarness(fault) {
   }
   await test('seed persistence failure stops Chromium before process spawn and releases launch resources', () => startupHarness('seed'));
   await test('verified Chromium startup navigates and starts its watcher', () => startupHarness(null));
+  await test('a stale Chromium kernel record blocks injection and navigation', () => startupHarness('runtime-version'));
   await test('contradictory Chromium configuration is rejected before process spawn', () => startupHarness('config'));
   await test('invalid website rules are rejected before Chromium process spawn or resource acquisition', () => startupHarness('url-config'));
   console.log(`fingerprint-delivery-boundaries-selftest: OK ${count}/${count}`);

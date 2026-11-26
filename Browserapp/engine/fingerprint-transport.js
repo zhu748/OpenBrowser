@@ -8,8 +8,19 @@ const { isActiveFingerprintSession } = require('./fingerprint-session');
 function pageFingerprintRegistration(item, tab) {
   const entries = item.fingerprintPageConnections ||= new Map();
   let entry = entries.get(tab.id);
-  if (!entry) { entry = { closed: false, connection: null, opening: null };entries.set(tab.id, entry); }
+  if (!entry) {
+    entry = { closed: false, connection: null, opening: null, verified: false };
+    entries.set(tab.id, entry);
+  }
   return entry;
+}
+
+function confirmPageFingerprintConnection(item, targetId, connection) {
+  const entry = item.fingerprintPageConnections?.get(targetId);
+  if (!entry || entry.connection !== connection || entry.closed || connection.closed || item.stopping || item.cleanedUp) {
+    throw Object.assign(new Error('Fingerprint page connection closed before verification'), { code: 'FINGERPRINT_TARGET_CLOSED' });
+  }
+  entry.verified = true;
 }
 
 function closePageFingerprintConnection(item, targetId) {
@@ -61,7 +72,8 @@ async function pageFingerprintConnection(engine, item, tab) {
           // snapshot distinguishes it from losing injection on a live page.
           if (tabs && !tabs.some((current) => current.id === tab.id)) return;
         } finally { clearTimeout(timer); }
-        if (obsolete()) return;
+        const replacement = entries.get(tab.id);
+        if (obsolete() || (replacement?.verified && !replacement.connection.closed)) return;
         // Losing the owner also loses future-document injection. Stop the
         // browser rather than leave a navigation window before the next sweep.
         Promise.resolve(engine.handleBrowserGone?.(item.profile?.id, item, 'fingerprint-page-disconnect', {
@@ -74,6 +86,10 @@ async function pageFingerprintConnection(engine, item, tab) {
         connection.close();
         throw new Error('Browser stopped while opening fingerprint connection');
       }
+      if (connection.closed || entries.get(tab.id) !== entry) {
+        connection.close();
+        throw Object.assign(new Error('Fingerprint page connection closed during opening'), { code: 'FINGERPRINT_TARGET_CLOSED' });
+      }
       return connection;
     }).catch((error) => {
       forgetTargetRuntimePolicy(item, tab.id, entry);
@@ -84,4 +100,5 @@ async function pageFingerprintConnection(engine, item, tab) {
   return entry.opening;
 }
 
-module.exports = { pageFingerprintConnection, pageFingerprintRegistration, closePageFingerprintConnection, closePageFingerprintConnections };
+module.exports = { pageFingerprintConnection, pageFingerprintRegistration, confirmPageFingerprintConnection,
+  closePageFingerprintConnection, closePageFingerprintConnections };

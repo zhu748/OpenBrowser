@@ -126,9 +126,9 @@ function documentScope() {
     assert.equal(fp.userAgent, p.userAgent);
     assert.equal(fp.userAgentMetadata.architecture, 'arm');
   });
-  await test('UA generation uses the selected kernel and persists preview hints', () => {
+  await test('UA generation uses the selected kernel and persists preview hints', async () => {
     const engine = { profiles: new Map(), chooseBrowser: () => ({ version: '149.0.7827.114' }) };
-    const generated = buildEditorUa(engine, { random: true, os: 'windows' });
+    const generated = await buildEditorUa(engine, { random: true, os: 'windows' });
     const saved = buildFingerprint({ ...profile({ userAgent: generated.userAgent, privacy: { fingerprint: {
       clientHints: generated.clientHints, uaGenerated: generated.kernelBound, uaVersionRandomized: generated.uaVersionRandomized,
       uaReduced: generated.uaReduced,
@@ -298,7 +298,7 @@ function documentScope() {
       calls.push({ method, params });
       if (method === 'script.addPreloadScript') return { script: 'preload' };
       if (method === 'browsingContext.getTree') return { contexts: [{ context: 'initial', url: 'about:blank' }] };
-      if (method === 'script.evaluate') return { type: 'success', result: params.expression === LIVE_PROBE_EXPRESSION
+      if (method === 'script.evaluate') return { type: 'success', result: params.expression.includes(LIVE_PROBE_EXPRESSION)
         ? remote({ platform: firefox.platform, userAgent: firefox.userAgent, hardwareConcurrency: firefox.hardwareConcurrency, languages: firefox.languages, timezone: firefox.timezone, vendor: '', screenWidth: firefox.screen.width, screenHeight: firefox.screen.height, devicePixelRatio: firefox.screen.devicePixelRatio }) : { type: 'undefined' } };
       if (method === 'browsingContext.create') return { context: 'second' };
       return {};

@@ -1,5 +1,7 @@
 'use strict';
 
+const { MAX_FINGERPRINT_DPR, toFiniteNumber } = require('../../shared/profile-values');
+
 // GPU identity inference and display projection have no random draws or I/O.
 const inferGpuFromRenderer = (rendererStr) => {
     const s = String(rendererStr || '').toLowerCase();
@@ -31,7 +33,7 @@ const inferGpuFromRenderer = (rendererStr) => {
     return null;
   };
 
-function resolvePersonaScreen({ profile, privacy, fpIn, mobileDevice, devicePersona, width, height, uaOs }) {
+function resolvePersonaScreen({ profile, privacy, fpIn, mobileDevice, devicePersona, width, height, uaOs, devicePixelRatio }) {
   // A persona carries its own panel size; without it the reported screen follows the window,
   // which is what makes "screen smaller than the viewport" style inconsistencies show up.
   // Phones report the full display, and their floor is far below the desktop minimum the window
@@ -41,31 +43,37 @@ function resolvePersonaScreen({ profile, privacy, fpIn, mobileDevice, devicePers
   const followsSystem = privacy.resolutionMode === 'real';
   const overrides = followsSystem ? {} : fpIn;
   const mobileScreen = mobileDevice ? mobileDevice.screen : null;
-  const hostScreen = (profile.hostScreen && Number(profile.hostScreen.width) >= 640 && Number(profile.hostScreen.height) >= 480)
-    ? { width: Math.round(Number(profile.hostScreen.width)), height: Math.round(Number(profile.hostScreen.height)) }
-    : null;
-  const followHostScreen = followsSystem && !mobileScreen && Boolean(hostScreen);
+  const hostScreen = followsSystem && !mobileScreen ? profile.hostScreen : null;
+  const hostWidth = toFiniteNumber(hostScreen?.width);
+  const hostHeight = toFiniteNumber(hostScreen?.height);
+  const followHostScreen = hostWidth >= 640 && hostHeight >= 480;
   const screenWidth = followHostScreen
-    ? hostScreen.width
+    ? Math.round(hostWidth)
     : mobileScreen
       ? Math.round(Number(overrides.screenWidth) || mobileScreen.width)
       : Math.max(640, Math.round(Number(overrides.screenWidth) || devicePersona?.screen?.width || width));
   const screenHeight = followHostScreen
-    ? hostScreen.height
+    ? Math.round(hostHeight)
     : mobileScreen
       ? Math.round(Number(overrides.screenHeight) || mobileScreen.height)
       : Math.max(480, Math.round(Number(overrides.screenHeight) || devicePersona?.screen?.height || height));
   const taskbarHeight = mobileScreen
     ? 0
-    : Math.max(0, Math.round(Number(overrides.taskbarHeight) || devicePersona?.screen?.taskbarHeight || (uaOs === 'macos' || uaOs === 'macos_arm' ? 25 : 40)));
-  const availLeft = Math.round(Number(overrides.availLeft) || 0);
-  const availTop = Math.round(Number(overrides.availTop) || 0);
-  const availWidth = Math.min(screenWidth, Math.max(1, Math.round(Number(overrides.availWidth) || screenWidth)));
-  const availHeight = Math.min(screenHeight, Math.max(1, Math.round(Number(overrides.availHeight) || (screenHeight - taskbarHeight))));
+    : Math.max(0, Math.round(toFiniteNumber(overrides.taskbarHeight)
+      ?? (devicePersona?.screen?.taskbarHeight || (uaOs === 'macos' || uaOs === 'macos_arm' ? 25 : 40))));
+  const available = followHostScreen ? hostScreen : overrides;
+  const availLeft = Math.min(screenWidth - 1, Math.max(0, Math.round(toFiniteNumber(available.availLeft) ?? 0)));
+  const availTop = Math.min(screenHeight - 1, Math.max(0, Math.round(toFiniteNumber(available.availTop) ?? 0)));
+  const remainingWidth = screenWidth - availLeft;
+  const remainingHeight = screenHeight - availTop;
+  const availWidth = Math.min(remainingWidth, Math.max(1, Math.round(toFiniteNumber(available.availWidth) || remainingWidth)));
+  const availHeight = Math.min(remainingHeight, Math.max(1, Math.round(toFiniteNumber(available.availHeight) || (screenHeight - taskbarHeight))));
   const screenX = Math.max(availLeft, Math.round(Number(overrides.screenX) || availLeft));
   const screenY = Math.max(availTop, Math.round(Number(overrides.screenY) || availTop));
+  const configuredDpr = toFiniteNumber(available.devicePixelRatio);
+  const dpr = configuredDpr > 0 && configuredDpr <= MAX_FINGERPRINT_DPR ? configuredDpr : devicePixelRatio;
 
-  return { screenWidth, screenHeight, availWidth, availHeight, availLeft, availTop, screenX, screenY };
+  return { screenWidth, screenHeight, availWidth, availHeight, availLeft, availTop, screenX, screenY, dpr };
 }
 
 module.exports = { inferGpuFromRenderer, resolvePersonaScreen };
