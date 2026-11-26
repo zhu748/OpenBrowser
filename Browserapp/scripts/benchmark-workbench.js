@@ -330,8 +330,9 @@ async function benchmark(args, lifecycle) {
         current += batch;
       }
       console.error(`Created ${current} profiles`);
-      markProgress(`fleet meter at ${size} profiles`);
-      await page.waitForFunction(count => document.querySelector('[role=meter]')?.getAttribute('aria-valuenow') === String(count), size, { timeout: 60000 });
+      markProgress(`sidebar total at ${size} profiles`);
+      await page.getByTestId('local-usage-total').locator('.local-usage-metric-value')
+        .filter({ hasText: new RegExp(`^${size}$`) }).waitFor({ timeout: 60000 });
       const report = await measure(page, size, args.rounds);
       markProgress(`verify budgets at ${size} profiles`);
       for (const key of ['searchP95Ms', 'paginationP95Ms', 'selectionP95Ms'])
