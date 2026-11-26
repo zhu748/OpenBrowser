@@ -167,6 +167,20 @@ async function main() {
     await fs.rm(path.join(root, 'kernels', 'chromium-versions'), { recursive: true });
     assert.equal(engine.kernelStatus().installed, false);
     assert.equal((await engine.ensureKernelBootstrap()).engine, 'firefox', 'a Firefox-only download must not trigger Chrome bootstrap');
+    engine.kernelManager.meta.pin = { engine: 'firefox', version: '153.6.0esr', path: esr };
+    let downloads = 0;
+    engine.downloadChromeStable = async () => {
+      downloads++;
+      return { engine: 'chromium', independent: true, path: await install('chromium', '156.0.8078.80') };
+    };
+    const concurrent = await Promise.all([
+      engine.ensureKernelBootstrap({ forChromium: true }),
+      engine.ensureKernelBootstrap({ forChromium: true }),
+    ]);
+    assert.equal(downloads, 1);
+    assert.equal(concurrent[0].path, concurrent[1].path);
+    assert.equal(engine.chooseBrowser({ engine: 'chromium', engineVersion: 'latest' }).path, concurrent[0].path);
+    assert.equal(engine.chooseBrowser({ engine: 'firefox', engineVersion: 'latest' }).path, esr);
     await checkFirefoxArchiveIdentity(root);
     console.log('KERNEL_PROFILE_SELECTION_SELFTEST OK (exact versions, legacy major, ESR archive identity, profile selection and pins)');
   } finally { await fs.rm(root, { recursive: true, force: true }); }

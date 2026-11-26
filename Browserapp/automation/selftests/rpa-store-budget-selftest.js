@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
+const { setTimeout: delay } = require('node:timers/promises');
 const { enforceStoreBudget } = require('../rpa-store-budget');
 const { RpaStore } = require('../rpa-store');
 const { decryptCredential } = require('../../credential-crypto');
@@ -72,6 +73,20 @@ async function checkLoadRecovery(root) {
     await virgin.load();
     assert.equal(virgin.loadReport.quarantined, false);
     assert.deepEqual(JSON.parse(decryptCredential(await fs.readFile(virgin.filePath))).tasks, []);
+
+    const outOfSpace = makeStore();
+    let attempts = 0;
+    const write = outOfSpace._writeAtomic;
+    outOfSpace._writeAtomic = async () => {
+      if (++attempts === 1) throw Object.assign(Error('fixture disk full'), { code: 'ENOSPC' });
+      await write();
+    };
+    await fs.writeFile(file, knownGood);
+    const before = await fs.readFile(file);
+    await assert.rejects(outOfSpace.load(), { code: 'ENOSPC' });
+    await delay(160);
+    assert.equal(attempts, 1, 'failed startup writes must not leave a detached retry');
+    assert.deepEqual(await fs.readFile(file), before);
   } finally {
     fs.readFile = readFile;
     fs.rename = rename;
@@ -124,6 +139,11 @@ async function main() {
     assert.ok(Buffer.byteLength(plaintext) <= limit, 'the budget bounds plaintext data before the encryption envelope');
     assert.deepEqual(JSON.parse(plaintext), store.data);
     await checkLoadRecovery(root);
+    const unchangedFile = path.join(root, 'unchanged.json');
+    await new RpaStore(unchangedFile).load();
+    const before = await fs.readFile(unchangedFile);
+    await new RpaStore(unchangedFile).load();
+    assert.deepEqual(await fs.readFile(unchangedFile), before, 'an unchanged encrypted store is not rewritten');
   } finally { await fs.rm(root, { recursive: true, force: true }); }
   console.log('RPA_STORE_BUDGET_SELFTEST OK (serialization, retention, exact limit, real file size, fail-closed recovery)');
 }

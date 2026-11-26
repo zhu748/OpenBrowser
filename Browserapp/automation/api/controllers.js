@@ -5,6 +5,7 @@ const { ProxyRoutes } = require('./proxy-routes');
 const { SyncRoutes } = require('./sync-routes');
 const { RpaRoutes } = require('./rpa-routes');
 const { CatalogRoutes } = require('./catalog-routes');
+const { fail } = require('./responses');
 
 /** Bind each handler to its own controller, never to the HTTP server. */
 function createApiHandlers(context) {
@@ -14,7 +15,9 @@ function createApiHandlers(context) {
     for (const name of Object.getOwnPropertyNames(Object.getPrototypeOf(controller))) {
       if (!name.startsWith('route')) continue;
       if (handlers[name]) throw new Error('Duplicate API handler: ' + name);
-      handlers[name] = controller[name].bind(controller);
+      handlers[name] = controller instanceof RpaRoutes && context.rpaStore === null
+        ? () => fail('rpa store unavailable', 503)
+        : controller[name].bind(controller);
     }
   }
   return Object.freeze(handlers);

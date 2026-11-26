@@ -68,6 +68,14 @@ class TrackedProfileMap extends Map {
     return [...this._pendingWrites].map(id => [id, this.revisionOf(id)]);
   }
 
+  hasPendingWrite(id) {
+    return this._pendingWrites.has(id);
+  }
+
+  contentHash(id) {
+    return this._revisions.get(id)?.hash;
+  }
+
   acknowledgeWrites(entries) {
     for (const [id, revision] of entries) if (this.revisionOf(id) === revision) this._pendingWrites.delete(id);
   }

@@ -221,6 +221,35 @@ function newServer(options) {
     await held.release();
   });
 
+  await checkAsync('an unreadable RPA store leaves the local API, proxy and account services ready', async () => {
+    const os = require('os');
+    const fs = require('fs/promises');
+    const path = require('path');
+    const userData = await fs.mkdtemp(path.join(os.tmpdir(), 'ob-port-degraded-'));
+    let stack;
+    try {
+      const unreadable = path.join(userData, 'rpa-store.json');
+      await fs.mkdir(unreadable);
+      const events = [];
+      stack = await require('../index').startAutomation({
+        app: { getPath: () => userData, getVersion: () => '1.0.0' },
+        engine: { running: new Map() }, port: 0, emit: event => events.push(event),
+      });
+      assert.strictEqual(stack.rpaStore, null);
+      assert.ok(events.some(event => event.type === 'storage-error' && event.feature === 'rpa'));
+      assert.deepStrictEqual(stack.proxyStore.list(), []);
+      assert.deepStrictEqual(stack.accountStore.list(), []);
+      const status = await httpGet(stack.info.port, '/status', stack.apiKey);
+      assert.strictEqual(status.status, 200);
+      const rpa = await httpGet(stack.info.port, '/api/rpa/plans', stack.apiKey);
+      assert.strictEqual(rpa.status, 503);
+      assert.ok((await fs.stat(unreadable)).isDirectory());
+    } finally {
+      await stack?.stop();
+      await fs.rm(userData, { recursive: true, force: true });
+    }
+  });
+
   // ================= report =================
   const passed = results.filter((r) => r.ok).length;
   const failed = results.filter((r) => !r.ok);

@@ -73,6 +73,27 @@ const ok = (n, c) => { assert.ok(c, n); console.log('  PASS  ' + n); passed += 1
     catch (e) { threw = /port was not ready/.test(e.message); }
     ok('times out cleanly when file never appears', threw);
   }
+  {
+    const dir = await mkTmp();
+    let requested;
+    const requestStarted = new Promise(resolve => { requested = resolve; });
+    const server = http.createServer(() => requested());
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      await fsp.writeFile(path.join(dir, 'DevToolsActivePort'), String(server.address().port));
+      const cancellation = new AbortController();
+      const pending = assert.rejects(waitForPort.call(ctx, dir, 3000, null, cancellation.signal), { code: 'BROWSER_START_CANCELLED' });
+      await requestStarted;
+      cancellation.abort(Object.assign(new Error('cancelled'), { code: 'BROWSER_START_CANCELLED' }));
+      await pending;
+      await assert.rejects(waitForPort.call(ctx, dir, 70), /port was not ready/);
+      ok('a stalled HTTP response is aborted on cancellation and at the deadline', true);
+    } finally {
+      server.closeAllConnections();
+      await new Promise(resolve => server.close(resolve));
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  }
   console.log(`\nwaitforport-selftest: ${passed} checks passed.`);
   process.exit(0);
 })().catch((e) => { console.error('waitforport-selftest FAILED:', e); process.exit(1); });

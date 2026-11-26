@@ -4,10 +4,10 @@
 const fsp = require('fs/promises');
 const path = require('path');
 const crypto = require('crypto');
+const { isDeepStrictEqual } = require('node:util');
 const credentialCrypto = require('../credential-crypto');
 const { cloneBuiltinTemplates } = require('./rpa-templates-builtin');
-// The 4 MB catalog is the offline fallback for remote template sync; load it
-// lazily so main-process startup never pays the JSON.parse cost up front.
+// Most consumers of this module never open the local template catalog.
 let localCatalogCache = null;
 function loadLocalCatalog() {
   if (!localCatalogCache) localCatalogCache = require('./data/catalog-templates.json');
@@ -80,6 +80,7 @@ class RpaStore {
 
   async load() {
     this.loadReport = { quarantined: false, quarantineFile: '', error: '' };
+    this.loadedEncryptedJson = null;
     try {
       this.data = await this.readData();
       this.loadError = null;
@@ -110,7 +111,16 @@ class RpaStore {
     this.forceFreeAllTemplates();
     if (this.data.version < 4) this.resetSeedTemplateUsage();
     this.data.version = 4;
-    await this.save();
+    const previous = this.loadedEncryptedJson;
+    this.loadedEncryptedJson = null;
+    if (!previous || Buffer.byteLength(previous) > this.sizeLimitBytes || previous !== JSON.stringify(this.data)) {
+      try {
+        await this._writeAtomic();
+      } catch (error) {
+        this.loadError = error;
+        throw error;
+      }
+    }
     return this.data;
   }
 
@@ -126,7 +136,12 @@ class RpaStore {
     }
     const encrypted = credentialCrypto.isEncrypted(raw);
     try {
-      return parseStoreData(encrypted ? credentialCrypto.decryptCredential(raw) : raw.toString('utf8'));
+      const serialized = encrypted ? credentialCrypto.decryptCredential(raw) : raw.toString('utf8');
+      const data = parseStoreData(serialized);
+      if (encrypted && (credentialCrypto.getFormat(raw) !== 'OBE1' || credentialCrypto.isUnifiedSaltEnvelope(raw))) {
+        this.loadedEncryptedJson = serialized;
+      }
+      return data;
     } catch (error) {
       // A temporarily unavailable keyring is not a corrupt or empty store.
       if (encrypted) throw new Error('Cannot decrypt RPA store; existing data was preserved', { cause: error });
@@ -163,18 +178,16 @@ class RpaStore {
           update_time: new Date().toISOString(),
         });
       } else if (existing.builtin || existing.source === 'builtin') {
-        existing.name = item.name;
-        existing.cat = item.cat;
-        existing.desc = item.desc;
-        existing.tags = item.tags;
-        existing.steps = JSON.parse(JSON.stringify(item.steps || []));
-        existing.pay_type = 1;
-        existing.developer = item.developer || 'OpenBrowser';
-        existing.builtin = true;
-        existing.source = 'builtin';
-        // Usage is local to this OpenBrowser installation, never seed data.
-        existing.uses = Number(existing.uses) || 0;
-        existing.update_time = new Date().toISOString();
+        const fields = {
+          name: item.name, cat: item.cat, desc: item.desc, tags: item.tags,
+          steps: item.steps || [], pay_type: 1, developer: item.developer || 'OpenBrowser',
+          builtin: true, source: 'builtin', uses: Number(existing.uses) || 0,
+        };
+        fields.steps = JSON.parse(JSON.stringify(fields.steps));
+        this.applyFreeTemplateInPlace(fields);
+        if (Object.entries(fields).some(([key, value]) => !isDeepStrictEqual(existing[key], value))) {
+          Object.assign(existing, fields, { update_time: new Date().toISOString() });
+        }
       }
     }
   }
@@ -424,7 +437,7 @@ class RpaStore {
     const retained = [];
     for (const template of this.data.templates) {
       if (template.source === 'catalog' || RpaStore.isLegacyExternalSource(template.source) || RpaStore.hasLegacyExternalId(template)) {
-        const canonical = this.normalizeLocalCatalogTemplate(template);
+        const canonical = this.applyFreeTemplateInPlace(this.normalizeLocalCatalogTemplate(template));
         // Preserve the locally tracked usage count: normalize hard-codes uses
         // to 0 for catalog inputs, but a stored template's usage is real state
         // (installTemplate increments it) and must survive restarts.
@@ -434,6 +447,7 @@ class RpaStore {
           byCanonical.set(canonical.id, {
             ...canonical,
             create_time: template.create_time || canonical.create_time,
+            update_time: template.update_time || canonical.update_time,
           });
         } else {
           byCanonical.set(canonical.id, {
@@ -446,16 +460,19 @@ class RpaStore {
       }
     }
     for (const raw of catalogTemplates) {
-      const next = this.normalizeLocalCatalogTemplate(raw);
+      const next = this.applyFreeTemplateInPlace(this.normalizeLocalCatalogTemplate(raw));
       const existing = byCanonical.get(next.id);
       if (!existing) {
         byCanonical.set(next.id, next);
       } else {
-        byCanonical.set(next.id, {
+        const merged = {
           ...next,
           create_time: existing.create_time || next.create_time,
+          update_time: existing.update_time,
           uses: Math.max(Number(existing.uses) || 0, Number(next.uses) || 0),
-        });
+        };
+        if (!isDeepStrictEqual(merged, existing)) merged.update_time = next.update_time;
+        byCanonical.set(next.id, merged);
       }
     }
     this.data.templates = [...retained, ...byCanonical.values()];

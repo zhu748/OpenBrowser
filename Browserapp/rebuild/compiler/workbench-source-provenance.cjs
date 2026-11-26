@@ -47,8 +47,11 @@ function writeSourceProvenance({ root, modules, resolve }) {
     .map(filename => "assets/" + filename);
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
   const entryPoints = Array.from(html.matchAll(/<script\b[^>]*\bsrc=["']([^"']+)["']/gi), match => match[1]).filter(programReference);
-  const stylesheetSources = Array.from(html.matchAll(/<link rel="stylesheet" href="\/([^"]+)">/g),
-    match => stylesheetSource(match[1], manifest, reviewedVendor));
+  const bundleFile = path.join(root, "workbench-styles.json");
+  const stylesheetBundles = fs.existsSync(bundleFile) ? JSON.parse(fs.readFileSync(bundleFile, "utf8")) : {};
+  const linkedStylesheets = Array.from(html.matchAll(/<link rel="stylesheet" href="\/([^"]+)">/g), match => match[1]);
+  const stylesheetSources = linkedStylesheets.flatMap(asset => stylesheetBundles[asset] || [asset])
+    .map(asset => stylesheetSource(asset, manifest, reviewedVendor));
   const visited = new Set();
   const pending = entryPoints.map(name => path.join(root, name));
   while (pending.length) {
@@ -90,6 +93,7 @@ function writeSourceProvenance({ root, modules, resolve }) {
     copiedAssets: copied.map(module => module.asset),
     generatedAssets: generated,
     computedImports,
+    stylesheetBundles,
     stylesheetSources,
     unclassifiedStylesheets: stylesheetSources.filter(style => !style.sources && !style.dependency).map(style => style.asset),
   };

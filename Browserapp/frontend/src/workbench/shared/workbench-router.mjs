@@ -1,9 +1,9 @@
 import { ref } from './workbench-vue.js';
 import { createWorkbenchRouter } from './routes.js';
-import AgentEntry from './workbench-agent-entry.js';
-import AgentChatRoute from './workbench-agent-chat-route.js';
-
-export const router = createWorkbenchRouter({ agentShell: AgentEntry, agentChat: AgentChatRoute });
+export const router = createWorkbenchRouter({
+  agentShell: () => import('./workbench-agent-entry.js'),
+  agentChat: () => import('./workbench-agent-chat-route.js'),
+});
 const agentHome = '/agent-console';
 
 export function installRouter(app) {

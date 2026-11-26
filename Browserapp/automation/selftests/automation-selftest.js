@@ -489,10 +489,11 @@ async function main() {
       return systemNetwork;
     },
   };
+  const directRefreshModes = [];
   const startPage = new StartPageServer({
     port: 0,
     engine: startPageEngine,
-    lookupDirectNetwork: async () => { directLookups += 1; return directNetwork; },
+    lookupDirectNetwork: async ({ force } = {}) => { directLookups += 1; directRefreshModes.push(force); return directNetwork; },
     lookupReachability: async options => {
       if (options.exitNetwork?.route === 'system') assert.equal(options.requestText, requestSystemNetwork);
       if (options.exitNetwork?.route === 'proxy') assert.equal(options.proxy, 'http://127.0.0.1:18080');
@@ -611,8 +612,11 @@ async function main() {
   const reachabilityResponse = await httpJson(startPage.port, 'GET', '/api/reachability?pid=direct', undefined, startHeaders(directToken));
   assert.strictEqual(reachabilityResponse.status, 200);
   assert.strictEqual(reachabilityResponse.body.data.google.status, 204);
+  const autoResponse = await httpJson(startPage.port, 'GET', '/api/network?pid=direct&refresh=auto', undefined, startHeaders(directToken));
+  assert.strictEqual(autoResponse.body.data.ip, directNetwork.ip);
+  assert.deepEqual(directRefreshModes, [true, true, false]);
   const startHtml = buildStartPageHtml({ pid: 'direct' });
-  assert.ok(startHtml.includes("'/api/network?pid='+encodeURIComponent(pid)+'&refresh=1'"));
+  assert.ok(startHtml.includes("'/api/network?pid='+encodeURIComponent(pid)+'&refresh='+(options.silent?'auto':'1')"));
   assert.ok(startHtml.includes("'X-OpenBrowser-Start-Token':sessionToken"));
   assert.ok(startHtml.includes("query.delete('token')"));
   assert.ok(directUrl.includes('token='));

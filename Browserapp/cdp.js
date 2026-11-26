@@ -13,7 +13,7 @@ function request(url, method = 'GET', options = {}) {
       if (error) reject(error);
       else resolve(body);
     };
-    const req = http.request(url, { method, timeout: timeoutMs }, (res) => {
+    const req = http.request(url, { method, timeout: timeoutMs, signal: options.signal }, (res) => {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (chunk) => {

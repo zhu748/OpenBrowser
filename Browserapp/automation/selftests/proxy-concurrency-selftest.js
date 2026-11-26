@@ -15,6 +15,7 @@ const fs = require('fs');
 const fsp = require('fs/promises');
 const os = require('os');
 const path = require('path');
+const { setImmediate: nextTurn } = require('node:timers/promises');
 
 const {
   ProxyStore,
@@ -144,8 +145,13 @@ async function main() {
     // Batch-starting N environments bound to one capped proxy: none of the siblings is in
     // `this.running` yet, so a check that only counted running windows would observe the proxy as
     // unused for every one of them and let the whole batch through.
-    engine.profiles.set('p10', proxyProfile('p10', { proxyId: shared.id, raw: shared.raw }));
-    engine.starting.set('p10', Promise.resolve());
+    const reservation = proxyProfile('p10', { proxyId: shared.id, raw: shared.raw });
+    engine.profiles.set('p10', reservation);
+    const task = Promise.resolve();
+    engine.starting.set('p10', task);
+    const queued = engine.proxyConcurrencyUsage(proxyProfile('p3', { proxyId: shared.id, raw: shared.raw }));
+    assert.deepStrictEqual(queued.running.map(entry => entry.id), ['p1']);
+    task.proxyReservation = reservation;
     const usage = engine.proxyConcurrencyUsage(proxyProfile('p3', { proxyId: shared.id, raw: shared.raw }));
     assert.ok(usage.running.some((entry) => entry.id === 'p10'), 'an in-flight start must be counted');
     let error = null;
@@ -158,8 +164,9 @@ async function main() {
   });
 
   check('the starting profile is never counted against itself', () => {
-    engine.profiles.set('p12', proxyProfile('p12', { proxyId: shared.id, raw: shared.raw }));
-    engine.starting.set('p12', Promise.resolve());
+    const reservation = proxyProfile('p12', { proxyId: shared.id, raw: shared.raw });
+    engine.profiles.set('p12', reservation);
+    engine.starting.set('p12', Object.assign(Promise.resolve(), { proxyReservation: reservation }));
     const usage = engine.proxyConcurrencyUsage(proxyProfile('p12', { proxyId: shared.id, raw: shared.raw }));
     assert.strictEqual(usage.running.filter((entry) => entry.id === 'p12').length, 0, 'the caller is excluded');
     engine.starting.delete('p12');
@@ -206,6 +213,59 @@ async function main() {
     assert.ok(guarded > resolved, 'the cap must be checked after the stored proxy is resolved');
     assert.ok(lock < 0 || guarded < lock, 'the cap must be checked before the profile lock is taken');
     return 'cap is asserted before the lock, data directory and proxy bridge';
+  });
+
+  await asyncCheck('a capped batch admits the earliest submissions', async () => {
+    const batchEngine = new BrowserEngine({ getPath: () => dir });
+    batchEngine.proxyStore = store;
+    const release = Promise.withResolvers();
+    const admitted = [];
+    const batch = Array.from({ length: 6 }, (_, index) => {
+      const profile = proxyProfile(`batch-${index}`, { proxyId: shared.id, raw: shared.raw });
+      batchEngine.profiles.set(profile.id, profile);
+      return batchEngine.startManaged(profile.id, profile, async () => {
+        admitted.push(profile.id);
+        await release.promise;
+      });
+    });
+    const settled = Promise.allSettled(batch);
+    try {
+      await Promise.all(batch.slice(2).map(start => assert.rejects(start, { code: 'ERR_PROXY_MAX_CONCURRENCY' })));
+    } finally {
+      release.resolve();
+      await settled;
+    }
+    assert.deepStrictEqual(admitted.sort(), ['batch-0', 'batch-1']);
+  });
+
+  await asyncCheck('an uncapped batch limits active preparation and can cancel a queued start', async () => {
+    const batchEngine = new BrowserEngine({ getPath: () => dir });
+    batchEngine.proxyStore = store;
+    const release = Promise.withResolvers();
+    const full = Promise.withResolvers();
+    const admitted = [];
+    const batch = Array.from({ length: 5 }, (_, index) => {
+      const profile = proxyProfile(`uncapped-${index}`, { proxyId: free.id, raw: free.raw });
+      batchEngine.profiles.set(profile.id, profile);
+      return batchEngine.startManaged(profile.id, profile, async () => {
+        admitted.push(profile.id);
+        if (admitted.length === 4) full.resolve();
+        await release.promise;
+      });
+    });
+    const settled = Promise.allSettled(batch);
+    try {
+      await full.promise;
+      assert.deepStrictEqual(admitted.sort(), ['uncapped-0', 'uncapped-1', 'uncapped-2', 'uncapped-3']);
+      const stopped = batchEngine.stop('uncapped-4');
+      const result = await Promise.race([stopped, nextTurn()]);
+      assert.strictEqual(result?.running, false, 'a queued stop must finish while all active launches are blocked');
+      await assert.rejects(batch[4], { code: 'BROWSER_START_CANCELLED' });
+    } finally {
+      release.resolve();
+      await settled;
+    }
+    assert.strictEqual(batchEngine.starting.size, 0);
   });
 
   // --- profile assignment accounting & capacity enforcement (Issue #25) ---

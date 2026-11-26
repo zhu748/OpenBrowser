@@ -6,10 +6,8 @@ import { n as useNotice } from './agent-BmSFI9WH.js';
 import { b as useRouter } from './rich-html-link-VdBpR3Cm.js';
 import { Z as Icon } from './basecomponent-ClhuVxJN.js';
 import { t as Button } from './rx-button-DyzuUt-V.js';
-import { t as exceljs } from './exceljs.min-DfecxsXL.js';
 
 const I18nText = resolveComponent('i18n-t');
-const Workbook = toModule(exceljs(), 1).default.Workbook;
 const router = useRouter();
 const [showSuccess, showStatus] = useNotice();
 const { invalidateCache } = useCache();
@@ -81,18 +79,24 @@ async function save(continueAdding) {
 }
 
 async function downloadTemplate() {
-  const workbook = new Workbook();
-  const sheet = workbook.addWorksheet('Accounts');
-  sheet.columns = workbookColumns();
-  sheet.addRow({
-    platformUrl: 'https://www.facebook.com/', platformUserName: 'example@gmail.com', platformPassword: 'password123', platformEfa: '', platformRemarks: '',
-  });
-  const file = await workbook.xlsx.writeBuffer();
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(new Blob([file], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-  link.download = 'account_import_template.xlsx';
-  link.click();
-  URL.revokeObjectURL(link.href);
+  try {
+    const { t: exceljs } = await import('./exceljs.min-DfecxsXL.js');
+    const { Workbook } = toModule(exceljs(), 1).default;
+    const workbook = new Workbook();
+    const sheet = workbook.addWorksheet('Accounts');
+    sheet.columns = workbookColumns();
+    sheet.addRow({
+      platformUrl: 'https://www.facebook.com/', platformUserName: 'example@gmail.com', platformPassword: 'password123', platformEfa: '', platformRemarks: '',
+    });
+    const file = await workbook.xlsx.writeBuffer();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([file], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    link.download = 'account_import_template.xlsx';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    showStatus(-1, error.message);
+  }
 }
 </script>
 

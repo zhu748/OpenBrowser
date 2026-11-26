@@ -336,8 +336,8 @@ async function checkBundledProfileRecovery(sqlite, source, { duplicate = false }
     for (let attempt = 0; attempt < 2; attempt++) {
       engine = make();
       let writes = 0;
-      const persist = engine.persist.bind(engine);
-      engine.persist = (...args) => { writes++; return persist(...args); };
+      const persistNow = engine._persistNow.bind(engine);
+      engine._persistNow = (...args) => { writes++; return persistNow(...args); };
       let failure;
       try { await engine.init(bundled); }
       catch (error) { failure = error; }
@@ -345,8 +345,8 @@ async function checkBundledProfileRecovery(sqlite, source, { duplicate = false }
         assert.ifError(failure);
         assert.strictEqual(engine.usingSqlite, sqlite);
         assert.deepStrictEqual([...engine.profiles.keys()], ['complete', 'second']);
-        assert.ok(writes > 0, 'an ordinary bundled manifest still persists');
-        if (!sqlite && !attempt) assert.strictEqual(writes, 2, 'the actual JSON recovery ran both persistence calls');
+        assert.strictEqual(writes, attempt === 0 ? 1 : 0,
+          'boot commits recovery and extension changes once, then skips unchanged state');
         assert.strictEqual(Boolean(engine.storageRecovery), !attempt);
         engine.sqliteStore?.close();
         continue;

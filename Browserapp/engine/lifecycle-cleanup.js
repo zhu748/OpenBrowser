@@ -12,6 +12,9 @@
  * slower RDP/VM hosts.
  */
 
+const COOKIE_SNAPSHOT_INTERVAL_MS = 30_000;
+const COOKIE_RETRY_INTERVAL_MS = 5_000;
+
 const HELPER_CLEANUP_ATTEMPTS = process.platform === 'win32' ? 32 : 3;
 const HELPER_CLEANUP_DELAY_MS = process.platform === 'win32' ? 250 : 120;
 const HELPER_CLEANUP_TIMEOUT_MS = process.platform === 'win32' ? 14000 : 3000;
@@ -30,19 +33,25 @@ const { closePageFingerprintConnections } = require('./fingerprint-transport');
 const { beginProfileStop, observeProfileStop } = require('./profile-lifecycle');
 const { persistProfileSync } = require('./profile-publication');
 
+function startCancelledError(id) {
+  return Object.assign(new Error(`Browser start was cancelled for profile ${id}`), { code: 'BROWSER_START_CANCELLED' });
+}
+
 function shouldSyncCookies(profile) {
   return profile && !profile.trashed && profile.advanced?.saveCookies !== false
     && profile.advanced?.syncCookiesOnClose !== false;
 }
 
 module.exports = {
-  captureRunningCookies(item) {
+  captureRunningCookies(item, { force = false } = {}) {
     const id = item.profile?.id;
     if (this.running.get(id) !== item || item.cleanedUp || !shouldSyncCookies(this.profiles.get(id))) return;
     if (item.cookieCapture) return item.cookieCapture;
+    if (!force && (item.stopping || performance.now() < (item.nextCookieCaptureAt || 0))) return;
     const connection = item.engine === 'firefox' ? item.bidiConnection : item.cdpConnection;
     if (!connection) return;
     item.cookieCapture = this.exportProfileCookies(connection, item.engine).then(snapshot => {
+      item.nextCookieCaptureAt = performance.now() + (snapshot ? COOKIE_SNAPSHOT_INTERVAL_MS : COOKIE_RETRY_INTERVAL_MS);
       if (snapshot && this.running.get(id) === item && !item.cleanedUp) item.cookieSnapshot = snapshot;
     }).finally(() => { item.cookieCapture = null; });
     return item.cookieCapture;
@@ -53,7 +62,7 @@ module.exports = {
     // An event-driven capture may already be in flight. Request one final
     // snapshot if the browser is still available, then keep the last good one.
     if (item.cookieCapture) await item.cookieCapture;
-    if (!isChildExited(item.child)) await this.captureRunningCookies(item);
+    if (!isChildExited(item.child)) await this.captureRunningCookies(item, { force: true });
     const latest = this.profiles.get(id);
     const snapshot = item.cookieSnapshot;
     if (this.running.get(id) !== item || !shouldSyncCookies(latest) || !snapshot
@@ -489,8 +498,8 @@ module.exports = {
         item.watchTimer = setTimeout(tick, 2400);
       }
     };
-    // Delay first check so startup tabs can settle
-    item.watchTimer = setTimeout(tick, 2500);
+    // Stagger windows launched together so their polls do not arrive in a burst.
+    item.watchTimer = setTimeout(tick, 2500 + Math.floor(Math.random() * 600));
   },
 
   clearRunningWatch(item) {
@@ -507,6 +516,10 @@ module.exports = {
   requestLifecycleStop(id, generation) {
     if (!this.lifecycleStopRequests) this.lifecycleStopRequests = new Map();
     this.lifecycleStopRequests.set(id, generation == null ? true : generation);
+    const start = this.starting?.get(id);
+    if (start && (generation == null || start.lifecycleGeneration === generation)) {
+      start.abortController?.abort(startCancelledError(id));
+    }
   },
 
   isLifecycleStopRequested(id, generation) {
@@ -535,12 +548,11 @@ module.exports = {
 
   beginShutdown() {
     this.shuttingDown = true;
+    for (const [id, start] of this.starting || []) start.abortController?.abort(startCancelledError(id));
   },
 
   assertStartGenerationActive(id, generation) {
     if (this.shuttingDown || this.stopAllInProgress || this.isLifecycleStopRequested(id, generation)) {
-      const error = new Error(`Browser start was cancelled for profile ${id}`);
-      error.code = 'BROWSER_START_CANCELLED';
-      throw error;
+      throw startCancelledError(id);
     }
   },};

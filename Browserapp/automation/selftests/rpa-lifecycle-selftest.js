@@ -227,9 +227,12 @@ async function resultDurability() {
   restarted.store.readData = async () => onDiskBeforeRecovery;
   restarted.store.ensureBuiltinTemplates = async () => {};
   restarted.store.ensureLocalCatalogTemplates = async () => {};
+  let restartedState;
+  restarted.store._writeAtomic = async () => { restartedState = structuredClone(restarted.store.data); };
   await restarted.store.load();
   assert.equal(restarted.store.getTask(task.id).status, 'interrupted');
   assert.equal(restarted.store.getTask(neverStarted.id).status, 'failed');
+  assert.equal(restartedState.tasks.find(({ id }) => id === task.id).status, 'interrupted');
   restarted.rpa.ensureProfileRunning = async () => assert.fail('an uncertain task must not execute again');
   await checkBlocked(() => restarted.routes.routeRpaRun({ input: { task_id: task.id, wait: false } }), 'RPA_EXECUTION_INTERRUPTED');
   await assert.rejects(restarted.rpa.runTask(task.id), { code: 'RPA_EXECUTION_INTERRUPTED' });

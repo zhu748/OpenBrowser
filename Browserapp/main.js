@@ -1018,6 +1018,7 @@ app.whenReady().then(async () => {
     chrome: process.versions.chrome,
     browsers: engine?.candidates?.() ?? [],
     profileRoot: engine?.getProfileDataRoot?.() ?? '',
+    profileStartupFailures: engine?.profileStartupFailures || 0,
     defaultProfileRoot: defaultProfileDataRoot,
     localApi: automation?.info || null,
     startPage: engine?.startPageServer?.info?.() || null,
@@ -1101,7 +1102,14 @@ app.whenReady().then(async () => {
   }
 
   try {
-    const apiConfig = await require('./rebuild/local-api').startupConfig(app.getPath('userData'));
+    let apiConfig;
+    try {
+      apiConfig = await require('./rebuild/local-api').startupConfig(app.getPath('userData'));
+    } catch (error) {
+      apiConfig = { open: false };
+      emit({ type: 'local-api-error', message: error.message });
+      console.error('Local API configuration could not be loaded:', error.message);
+    }
     automation = await startAutomation({
       beforeApiStart: (proxyStore) => cloudOps.recoverPendingRestore({ proxyStore }),
       app,

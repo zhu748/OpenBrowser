@@ -26,6 +26,8 @@ for (const mode of ['ip', 'system', 'fr-FR', 'zh-CN', 'invalid']) {
   const profile = { language: 'ja-JP', privacy: { languageMode: mode } };
   assert.equal(browser.resolveProfileLanguage(profile, { countryCode: 'ZZ' }), engine.resolveProfileLanguage(profile, { countryCode: 'ZZ' }));
 }
+assert.equal(engine.resolveProfileLanguage({ language: 'ja_JP', privacy: { languageMode: 'custom' } }), 'ja-JP');
+assert.equal(engine.resolveProfileLanguage({ language: 'invalid', privacy: { languageMode: 'custom' } }), 'en-US');
 const commonJsContext = vm.createContext({ Intl, module: { exports: {} } });
 vm.runInContext(source, commonJsContext);
 assert.equal(commonJsContext.OpenBrowserLocale, undefined, 'CommonJS exports do not attach browser globals');

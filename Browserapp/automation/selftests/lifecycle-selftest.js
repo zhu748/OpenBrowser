@@ -569,7 +569,36 @@ async function testShutdownRejectsNewAndPendingStarts() {
   await assert.rejects(engine.start({ id: 'closing-env', name: 'Closing' }), { code: 'ENGINE_SHUTTING_DOWN' });
 }
 
+async function testCookieSnapshotCadence() {
+  const engine = makeEngine();
+  const profile = { id: 'cookie-snapshot', cookies: '[]' };
+  const item = { profile, cdpConnection: {}, child: { exitCode: null, signalCode: null } };
+  engine.profiles.set(profile.id, profile);
+  engine.running.set(profile.id, item);
+  engine.assignments = new Map();
+  engine.networkInfo = new Map();
+  engine.persist = async () => {};
+  let reads = 0;
+  const closingSnapshot = '[{"name":"during-close","value":"latest"}]';
+  const firstSnapshot = Promise.withResolvers();
+  engine.exportProfileCookies = async () => ++reads === 1 ? firstSnapshot.promise : closingSnapshot;
+
+  const initialCapture = engine.captureRunningCookies(item);
+  assert.strictEqual(engine.captureRunningCookies(item), initialCapture, 'in-flight reads must coalesce');
+  const closing = engine.saveClosingCookies(profile.id, item);
+  item.stopping = true;
+  assert.strictEqual(reads, 1, 'close waits for the active capture before reading again');
+  firstSnapshot.resolve('[]');
+  assert.strictEqual(await closing, true);
+  assert.strictEqual(reads, 2);
+  assert.strictEqual(engine.profiles.get(profile.id).cookies, closingSnapshot);
+  item.stopping = false;
+  await engine.captureRunningCookies(item);
+  assert.strictEqual(reads, 2, 'periodic reads honor the snapshot interval');
+}
+
 async function main() {
+  await testCookieSnapshotCadence();
   await testStateRecovery();
   await testProfileLockRecovery();
   await testBrowserPidPreventsRecovery();

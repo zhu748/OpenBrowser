@@ -16,7 +16,7 @@
   "scripts": {
     "inventory:modules": "node scripts/module-inventory.js",
     "check:environment": "node scripts/check-dev-environment.js",
-    "start": "npm run rebuild:ui -- --if-needed && node scripts/run-app.js",
+    "start": "npm run rebuild:ui -- --if-needed --dev && node scripts/run-app.js",
     "start:source": "npm run build:renderer && node scripts/run-app.js --source-renderer",
     "lint": "eslint .",
     "selftest": "node scripts/selftest-one.js",

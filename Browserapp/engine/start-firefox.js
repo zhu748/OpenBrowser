@@ -160,6 +160,7 @@ module.exports = {
         lifecycleGeneration,
         assertCurrent: assertLaunchProfileCurrent,
         onStage: stage => { currentStage = stage; },
+        signal: this.starting?.get(profile.id)?.abortController?.signal,
       }));
 
       currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备 Firefox 内核…', lifecycleGeneration);
@@ -306,28 +307,20 @@ module.exports = {
       child.stderr?.on('data', (chunk) => { startupDiagnostic.stderr = appendOutput(startupDiagnostic.stderr, chunk); });
       child.on('error', (error) => { startupDiagnostic.spawnError = error.message; });
 
-      // Give the process a moment; an immediate exec failure must not be
-      // reported as a successful start. There is no port to wait for.
-      // Event-driven: resolve as soon as the child reports exit/error; the
-      // fixed 400ms remains only as a tail bound for a healthy spawn.
-      await new Promise((resolve) => {
-        const timer = setTimeout(finish, 400);
-        if (timer.unref) timer.unref();
-        function finish() {
-          clearTimeout(timer);
-          child.removeListener('exit', finish);
-          child.removeListener('error', finish);
-          resolve();
+      currentStage = 'bidi';
+      this.emitStartProgress(profile.id, 'bidi', 76, '正在等待 Firefox BiDi…', lifecycleGeneration);
+      const signal = this.starting?.get(profile.id)?.abortController?.signal;
+      let endpoint;
+      try {
+        if (childExitState.error) throw childExitState.error;
+        endpoint = await waitForFirefoxEndpoint(child, 12000, signal);
+      } catch (error) {
+        if (childExitState.exited || childExitState.error) {
+          error.message += startupDiagnostic.stderr ? ' ' + startupDiagnostic.stderr.slice(-400) : '';
         }
-        child.once('exit', finish);
-        child.once('error', finish);
-      });
-      if (childExitState.exited || childExitState.error) {
-        throw new Error('Firefox 启动后立即退出'
-          + (childExitState.code !== null ? ` (code ${childExitState.code})` : '')
-          + (childExitState.error ? `: ${childExitState.error.message}` : '')
-          + (startupDiagnostic.stderr ? ` ${startupDiagnostic.stderr.slice(-400)}` : ''));
+        throw error;
       }
+      this.assertStartGenerationActive(profile.id, lifecycleGeneration);
 
       const item = {
         child,
@@ -368,7 +361,6 @@ module.exports = {
       attachBrowserExitHandlers(this, profile.id, item, child);
 
       currentStage = 'inject'; this.emitStartProgress(profile.id, 'inject', 82, '正在注入 Firefox 设备指纹…', lifecycleGeneration);
-      const endpoint = await waitForFirefoxEndpoint(child);
       const connection = new BidiConnection(endpoint, {
         onDisconnect: (error) => {
           if (item.cleanedUp || item.stopping) return;

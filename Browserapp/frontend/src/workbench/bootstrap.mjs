@@ -127,7 +127,8 @@ async function showNativeDialog(app) {
 
 async function startWorkbench() {
   globalThis.isElectron = true;
-  globalThis.$appVersion = (await globalThis.ops.getInfo()).appVersion;
+  const { appVersion, profileStartupFailures } = await globalThis.ops.getInfo();
+  globalThis.$appVersion = appVersion;
   globalThis.$rendererAbiVersion = '4.1.0';
   globalThis.mixpanel = { track() {} };
   // Both calls depend on the same local store. Put the settings read and its
@@ -165,6 +166,15 @@ async function startWorkbench() {
   }
   await activate();
   app.mount('#app');
+  if (profileStartupFailures) {
+    const language = startupLanguage();
+    const messages = {
+      'zh-CN': `${profileStartupFailures} 个环境无法读取，原始记录已保留。`,
+      en: `${profileStartupFailures} profiles could not be loaded. The original records were preserved.`,
+      ru: `Не удалось загрузить профили (${profileStartupFailures}). Исходные данные сохранены.`,
+    };
+    globalThis.__localUiError?.(messages[language]);
+  }
   finishLoading();
   document.querySelector('#page-loading')?.remove();
   globalThis.__router = router;

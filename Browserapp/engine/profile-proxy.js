@@ -16,6 +16,7 @@
 const { parseProxy, lookupProxyCountry, extractProxyFromApi, invokeProxyRefresh, classifyProxyError } = require('../proxy-forwarder');
 const { sameProxyIdentity } = require('./proxy-helpers');
 const { profileWriteGuard } = require('./profile-write-guard');
+const { waitForLaunchProbe } = require('./launch-preparation');
 const { isNoCredentialProxy } = require('../shared/proxy-redact');
 
 module.exports = {
@@ -246,7 +247,8 @@ module.exports = {
       extractError: extractError ? String(extractError.message || extractError) : null,
     };
   },
-  async prepareProfileProxyForStart(profile, { publish = true, onNetwork } = {}) {
+  async prepareProfileProxyForStart(profile, { publish = true, onNetwork, signal } = {}) {
+    signal?.throwIfAborted();
     const assertCurrent = profileWriteGuard(this, profile.id);
     let working = this.resolveStoredProxyProfile(this.sanitizeProfile(profile));
     const meta = working.proxyMeta || {};
@@ -261,10 +263,13 @@ module.exports = {
     const hasProxy = working.proxy && !isNoCredentialProxy(working.proxy);
     const extractUrl = String(meta.apiExtractUrl || '').trim();
     // Align with refreshProfileProxy: refresh first (rotate IP), then extract current endpoint.
+    // Let these provider operations settle before a replacement launch uses the same profile.
     if (meta.refreshOnStart && String(meta.refreshUrl || '').trim()) {
       try {
         await invokeProxyRefresh(meta.refreshUrl);
+        signal?.throwIfAborted();
       } catch (error) {
+        signal?.throwIfAborted();
         this.emit({ type: 'proxy-error', id: working.id, message: '启动前刷新代理失败：' + (error.message || error) });
         throw new Error('启动前刷新代理失败：' + (error.message || error));
       }
@@ -272,6 +277,7 @@ module.exports = {
     if (extractUrl) {
       try {
         const extracted = await extractProxyFromApi(extractUrl);
+        signal?.throwIfAborted();
         const rawProxy = extracted.raw || (
           extracted.protocol + '://'
           + (extracted.username ? (encodeURIComponent(extracted.username) + ':' + encodeURIComponent(extracted.password) + '@') : '')
@@ -279,6 +285,7 @@ module.exports = {
         );
         working = this.sanitizeProfile({ ...working, networkMode: 'proxy', proxy: rawProxy });
       } catch (error) {
+        signal?.throwIfAborted();
         if (!hasProxy) throw new Error('动态代理提取失败：' + (error.message || error));
         this.emit({
           type: 'proxy-warn',
@@ -304,11 +311,12 @@ module.exports = {
       for (let index = 0; index < candidates.length; index += 1) {
         const candidate = candidates[index];
         try {
-          const network = await this.testProxy(working, {
+          const network = await waitForLaunchProbe(this.testProxy(working, {
             allowExtract: false,
             proxy: candidate,
             proxySource: index === 0 ? 'primary' : 'backup',
-          });
+          }), signal);
+          signal?.throwIfAborted();
           working = this.sanitizeProfile({ ...working, networkMode: 'proxy', proxy: network.proxyRaw || candidate });
           assertCurrent();
           working = this.applyNetworkToProfile(working, network, { persist: false, publish }).profile;
@@ -316,6 +324,7 @@ module.exports = {
           ok = true;
           break;
         } catch (error) {
+          signal?.throwIfAborted();
           if (error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
           lastError = error;
         }

@@ -164,7 +164,7 @@ async function evaluateBidi(connection, target, expression) {
   return deserializeRemoteValue(result.result);
 }
 
-function waitForFirefoxEndpoint(child, timeout = 12000) {
+function waitForFirefoxEndpoint(child, timeout = 12000, signal) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let output = child._startupDiagnostic?.stderr || '';
@@ -175,22 +175,27 @@ function waitForFirefoxEndpoint(child, timeout = 12000) {
       child.stderr?.removeListener('data', read);
       child.removeListener('exit', exited);
       child.removeListener('error', failed);
+      signal?.removeEventListener('abort', cancelled);
       if (error) reject(error); else resolve(endpoint);
     };
     const read = (chunk = '') => {
       output = (output + chunk).slice(-32768);
-      const match = output.match(/WebDriver BiDi listening on (ws:\/\/[^\s]+)/i);
+      const match = output.match(/WebDriver BiDi listening on (ws:\/\/[^\s]+)(?=\s)/i);
       if (match) {
         try { finish(null, localBidiEndpoint(match[1])); } catch (error) { finish(error); }
       }
     };
     const exited = () => finish(new Error('Firefox exited before BiDi became ready'));
     const failed = (error) => finish(error);
+    const cancelled = () => finish(signal.reason);
     const timer = setTimeout(() => finish(new Error('Firefox BiDi startup timeout')), timeout);
     child.stderr?.on('data', read);
     child.once('exit', exited);
     child.once('error', failed);
-    if (child.exitCode != null || child.signalCode) exited(); else read();
+    signal?.addEventListener('abort', cancelled, { once: true });
+    if (signal?.aborted) cancelled();
+    else if (child.exitCode != null || child.signalCode) exited();
+    else read();
   });
 }
 

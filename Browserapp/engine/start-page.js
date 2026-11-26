@@ -125,6 +125,7 @@ module.exports = {
     return this.systemNetworkProbe;
   },
   async ensureExitNetworkForLocale(profile, options = {}) {
+    options.signal?.throwIfAborted();
     // force: 「网络不通停止打开」守护需要一次真实检测并让失败向上抛出。
     if (!options.force && !this.needsExitNetworkForLocale(profile)) return null;
     const assertCurrent = profileWriteGuard(this, profile.id);
@@ -145,6 +146,7 @@ module.exports = {
         // Local direct exit: geo lookup is best-effort for language/timezone only.
         network = await lookupDirectCountry({ force: Boolean(options.force) });
       }
+      options.signal?.throwIfAborted();
       assertCurrent();
       if (network) {
         if (options.publish !== false) {
@@ -155,6 +157,7 @@ module.exports = {
       }
       return network;
     } catch (error) {
+      options.signal?.throwIfAborted();
       // Direct start succeeded without proxy; geo API failure must not surface as proxy error.
       if (options.force || error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
       if (route === 'proxy') {
@@ -283,19 +286,7 @@ module.exports = {
     let pageNetwork = this.networkInfo.get(profile.id) || null;
     const route = profileExitRoute.call(this, profile);
     if ((route === 'system') !== (pageNetwork?.route === 'system')) pageNetwork = null;
-    // 启动前尽量补全出口信息，启动页打开即可显示 IP（直连/代理同理）
-    if (!pageNetwork?.ip) {
-      try {
-        if (route === 'proxy') {
-          pageNetwork = await this.testProxy(profile, { proxy: profile.proxy, allowExtract: false });
-        } else {
-          pageNetwork = route === 'system' ? await this.lookupSystemNetwork() : await lookupDirectCountry();
-          if (pageNetwork) this.networkInfo.set(profile.id, pageNetwork);
-        }
-      } catch (error) {
-        pageNetwork = { ...pageNetwork, route, probeError: error.message };
-      }
-    }
+    // The welcome page fetches missing exit data after it renders.
     const timezone = fingerprintOverride
       ? (fingerprintOverride.timezone || '')
       : (profile.privacy?.timezoneMode === 'real' ? '' : (

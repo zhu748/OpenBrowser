@@ -588,8 +588,9 @@ class BrowserKernelManager {
         console.warn('[kernel] kernel-meta.json unreadable, continuing with defaults:', error.message);
       }
     }
-    // Reconcile the metadata with a kernel discovered in the current data root.
-    const installed = this.resolveInstalled();
+    // The integrated metadata belongs to Chromium. Firefox pins have their
+    // own record and must not replace the path to an existing Chromium kernel.
+    const installed = this.resolveInstalled({ includeFirefoxPin: false });
     if (installed && (this.meta.binary !== installed.path || this.meta.source !== installed.source)) {
       this.meta.binary = installed.path;
       this.meta.source = installed.source;
@@ -757,10 +758,10 @@ class BrowserKernelManager {
     return this.integritySummary;
   }
 
-  resolveInstalled() {
+  resolveInstalled({ includeFirefoxPin = true } = {}) {
     // 1) Explicit user pin (kernel panel "设为默认") — highest priority, and the
     //    only branch that may return a Firefox kernel as the global default.
-    if (this.meta.pin && this.meta.pin.path) {
+    if (this.meta.pin?.path && (includeFirefoxPin || this.meta.pin.engine !== 'firefox')) {
       const pin = this.meta.pin;
       const list = this.listInstalledKernels();
       const firefoxRoot = path.join(this.kernelsRoot, 'firefox');
@@ -825,7 +826,7 @@ class BrowserKernelManager {
       return kernelCandidate(SOURCE_CFT, bundledCft.binary, bundledKernelVersion(bundledCft.root));
     }
 
-    if (this.meta.binary && fs.existsSync(this.meta.binary)) {
+    if (this.meta.source !== SOURCE_MOZILLA && this.meta.binary && fs.existsSync(this.meta.binary)) {
       const src = this.meta.source || SOURCE_WAYFERN;
       // Refuse stale openbrowser-148 meta on non-mac-x64 hosts.
       if (!(src === SOURCE_OPENBROWSER && !isOpenBrowser148SupportedHost())) {
@@ -875,7 +876,8 @@ class BrowserKernelManager {
 
     const localStable = findBundledChromeStable([this.userData, this.kernelsRoot]);
     if (localStable) {
-      return kernelCandidate(SOURCE_CHROME_STABLE, localStable.binary, this.meta.version || bundledKernelVersion(localStable.root));
+      const version = this.meta.source === SOURCE_CHROME_STABLE && this.meta.version;
+      return kernelCandidate(SOURCE_CHROME_STABLE, localStable.binary, version || bundledKernelVersion(localStable.root));
     }
 
     // User-data Chrome for Testing path (legacy and explicit local installs).
@@ -1716,7 +1718,7 @@ class BrowserKernelManager {
       }
       return this.installChromiumVersion(release.version, release.url);
     }
-    const existing = this.resolveInstalled();
+    const existing = this.resolveInstalled({ includeFirefoxPin: false });
     if (!force && existing?.source === SOURCE_CHROME_STABLE) return existing;
     return this.installChromeStable(release);
   }

@@ -67,6 +67,14 @@ async function main() {
   assert.deepEqual(fallback.installed, [{ ...desired[0], chromeExtensionId: null }]);
   await assert.rejects(reconcileOnConnection({ async command() { throw Error('connection closed'); } }, desired),
     /connection closed/);
+  const policyRestricted = { async command(method) {
+    if (method === 'Extensions.getExtensions') return { extensions: [] };
+    throw Error('Loading of unpacked extensions is disabled by the administrator.');
+  } };
+  const allowedWithoutMarker = await reconcileOnConnection(policyRestricted, [{ ...desired[0], builtIn: true }]);
+  assert.equal(allowedWithoutMarker.installed.length, 0);
+  assert.equal(allowedWithoutMarker.warnings.length, 1);
+  await assert.rejects(reconcileOnConnection(policyRestricted, desired), { code: 'EXTENSION_STARTUP_FAILED' });
   let extensions = [{ id: 'old', path: oldPath, enabled: true }];
   const commands = [];
   const connection = { async command(method, params = {}) {

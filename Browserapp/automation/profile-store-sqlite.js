@@ -285,6 +285,14 @@ class ProfileStoreSqlite {
           failed_at = excluded.failed_at;
       `),
       countDecodeFailures: this.db.prepare('SELECT count(*) as count FROM profile_decode_failures'),
+      countStartupValidationFailures: this.db.prepare(`
+        SELECT count(*) as count FROM profile_decode_failures AS failure
+        JOIN profiles ON profiles.id = failure.id
+        WHERE failure.context = 'startup-profile-validation'
+      `),
+      clearStartupValidationFailure: this.db.prepare(`
+        DELETE FROM profile_decode_failures WHERE id = ? AND context = 'startup-profile-validation'
+      `),
       pruneDecodeFailures: this.db.prepare('DELETE FROM profile_decode_failures WHERE failed_at < ?'),
       listDecodeFailures: this.db.prepare('SELECT id, error, context, failed_at FROM profile_decode_failures ORDER BY failed_at DESC'),
       upsertRecordFailure: this.db.prepare(`
@@ -543,6 +551,7 @@ class ProfileStoreSqlite {
       updatedAt,
       data
     );
+    this._statements.clearStartupValidationFailure.run(id);
     // Direct writes can replace a row whose previous value is still memoized.
     // Diffed saves repopulate this entry only after their transaction commits.
     this._rowHashes?.delete(id);
@@ -607,7 +616,11 @@ class ProfileStoreSqlite {
     if (!row) return null;
     const { profile, error: decodeError } = tryDecodeProfileData(row.data);
     if (profile && typeof profile === 'object' && !Array.isArray(profile) && String(profile.id) === row.id) return profile;
-    const error = decodeError || 'Invalid profile record or identity mismatch';
+    this._recordProfileFailure(row, context, decodeError || 'Invalid profile record or identity mismatch');
+    return null;
+  }
+
+  _recordProfileFailure(row, context, error) {
     const id = String(row.id || 'unknown');
     try {
       const raw = Buffer.isBuffer(row.data) || row.data instanceof Uint8Array
@@ -622,7 +635,6 @@ class ProfileStoreSqlite {
       } catch (_) { /* pruning must never break decoding */ }
     } catch (_) {}
     console.warn(`[profile-store] profile ${id} failed to decode (${context}); row quarantined for recovery: ${error}`);
-    return null;
   }
 
   /**
@@ -652,36 +664,72 @@ class ProfileStoreSqlite {
     return this._statements.getProfileIds.all().map(row => row.id);
   }
 
-  getAllProfiles({ withTimestamps = false } = {}) {
-    const rows = this._statements.getAllProfiles.all();
-    const result = [];
-    // Prime the row-hash map from the decoded state: saves through
-    // saveProfilesDiffed then know what is already on disk.
-    this._rowHashes = new Map();
-    const legacySaltRows = [];
-    for (const row of rows) {
-      const decoded = this._decodeProfileRow(row, 'getAllProfiles');
-      if (decoded) {
-        result.push(withTimestamps ? {
-          ...decoded, createdAt: decoded.createdAt || row.created_at, updatedAt: decoded.updatedAt || row.updated_at,
-        } : decoded);
-        const raw = row.data instanceof Uint8Array ? Buffer.from(row.data) : row.data;
-        // Legacy/plaintext fallback rows must be encrypted by the next save,
-        // even when their decoded fields have not changed.
-        if (credentialCrypto.isEncrypted(raw)) {
-          this._rowHashes.set(String(decoded.id), this.profileDataHash(decoded));
-          // Pre-unified-salt envelopes each pay their own scryptSync on every
-          // load (30-45ms sync per row → seconds of startup freeze on large
-          // stores). Count them so the migration below can re-encrypt the
-          // whole store once, after which loads pay a single derivation.
-          if (credentialCrypto.getFormat(raw) === 'OBE1' && !credentialCrypto.isUnifiedSaltEnvelope(raw)) {
-            legacySaltRows.push({ id: row.id, data: row.data });
-          }
-        }
+  countProfileRows() {
+    return Number(this._statements.getProfileCount.get().count);
+  }
+
+  getAllProfiles(options) {
+    return [...this._scanProfileRows(options)].filter(Boolean);
+  }
+
+  async loadStartupProfiles(normalizeProfile, publishProfile) {
+    const timeSliceMs = 8;
+    let loaded = 0;
+    let deadline = performance.now() + timeSliceMs;
+    for (const profile of this._scanProfileRows({ withTimestamps: true, normalizeProfile })) {
+      if (profile) {
+        publishProfile(profile);
+        loaded++;
+      }
+      if (performance.now() >= deadline) {
+        await new Promise(resolve => setImmediate(resolve));
+        deadline = performance.now() + timeSliceMs;
       }
     }
+    return loaded;
+  }
+
+  *_scanProfileRows({ withTimestamps = false, normalizeProfile } = {}) {
+    const rows = this._statements.getAllProfiles.all();
+    // Compare the next save against the decoded state as read from disk.
+    this._rowHashes = new Map();
+    const legacySaltRows = [];
+    const knownFailures = normalizeProfile && this._statements.countStartupValidationFailures.get().count
+      ? new Set(this._statements.listDecodeFailures.all().filter(failure => failure.context === 'startup-profile-validation').map(failure => failure.id))
+      : null;
+    for (const row of rows) {
+      const decoded = this._decodeProfileRow(row, 'getAllProfiles');
+      if (!decoded) {
+        yield null;
+        continue;
+      }
+      const profile = withTimestamps ? {
+        ...decoded, createdAt: decoded.createdAt || row.created_at, updatedAt: decoded.updatedAt || row.updated_at,
+      } : decoded;
+      let normalized;
+      try {
+        normalized = normalizeProfile ? normalizeProfile(profile) : profile;
+      } catch (_) {
+        this._recordProfileFailure(row, 'startup-profile-validation', 'Invalid profile fields');
+        yield null;
+        continue;
+      }
+      if (knownFailures?.has(row.id)) this._statements.clearStartupValidationFailure.run(row.id);
+      const raw = row.data instanceof Uint8Array ? Buffer.from(row.data) : row.data;
+      // Plaintext rows are left unacknowledged so the next save encrypts them.
+      if (credentialCrypto.isEncrypted(raw)) {
+        this._rowHashes.set(String(decoded.id), this.profileDataHash(decoded));
+        if (credentialCrypto.getFormat(raw) === 'OBE1' && !credentialCrypto.isUnifiedSaltEnvelope(raw)) {
+          legacySaltRows.push({ id: row.id, data: row.data });
+        }
+      }
+      yield normalized;
+    }
     this._scheduleLegacySaltMigration(legacySaltRows);
-    return result;
+  }
+
+  hasPersistedProfileHash(id, hash) {
+    return this._rowHashes?.get(id) === hash;
   }
 
   /**
@@ -1061,7 +1109,8 @@ class ProfileStoreSqlite {
    */
   exportEngineState() {
     const profiles = this.getAllProfiles({ withTimestamps: true });
-    const missingProfiles = Number(this._statements.getProfileCount.get().count) - profiles.length;
+    const missingProfiles = this.countProfileRows() - profiles.length
+      + Number(this._statements.countStartupValidationFailures.get().count);
     if (missingProfiles) throw Object.assign(
       new Error('Cannot export incomplete storage: damaged profile records were preserved for recovery'),
       { code: 'STORAGE_DECODE_FAILED', count: missingProfiles },

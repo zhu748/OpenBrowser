@@ -1534,15 +1534,18 @@ async function lookupDirectCloudflareTrace(requestText) {
 // doubling the public-source traffic and rate-limit exposure per launch.
 const DIRECT_LOOKUP_CACHE_TTL_MS = 10 * 60 * 1000;
 let directLookupCache = null;
+let directLookupInFlight = null;
 
 async function lookupDirectCountry(options = {}) {
   const force = Boolean(options.force || options.refresh);
   if (!force && directLookupCache && Date.now() - directLookupCache.at < DIRECT_LOOKUP_CACHE_TTL_MS) {
     return { ...directLookupCache.value, cached: true, fromCache: true };
   }
-  const result = await lookupNetworkCountry(fetchUrlText);
-  directLookupCache = { at: Date.now(), value: result };
-  return result;
+  directLookupInFlight ||= lookupNetworkCountry(fetchUrlText).then(result => {
+    directLookupCache = { at: Date.now(), value: result };
+    return result;
+  }).finally(() => { directLookupInFlight = null; });
+  return { ...await directLookupInFlight };
 }
 
 async function lookupNetworkCountry(requestText) {

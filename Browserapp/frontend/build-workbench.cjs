@@ -5,6 +5,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const { parseArgs } = require("node:util");
+const { setTimeout: delay } = require("node:timers/promises");
 const { parseExpressionAt } = require("acorn");
 const { evidencePath } = require("../rebuild/compiler/evidence-path.cjs");
 const { compileWorkbenchComponent, compileWorkbenchIcon } = require("./compile-workbench-component.cjs");
@@ -12,7 +13,8 @@ const { compileWorkbenchComponent, compileWorkbenchIcon } = require("./compile-w
 const app = path.resolve(__dirname, "..");
 const repo = path.dirname(app);
 const compiler = path.join(app, "rebuild/compiler");
-const { values } = parseArgs({ options: { "out-dir": { type: "string" }, "if-needed": { type: "boolean" } } });
+const { values } = parseArgs({ options: { "out-dir": { type: "string" }, "if-needed": { type: "boolean" }, dev: { type: "boolean" } } });
+const devBuild = Boolean(values.dev) && process.env.OPENBROWSER_RENDERER !== "source";
 const output = values["out-dir"] ? path.resolve(values["out-dir"]) : path.join(app, "roxy-ui");
 const parent = path.dirname(output);
 const iconDirectory = "frontend/src/workbench/icons";
@@ -53,6 +55,24 @@ function run(file, args, env) {
   }
 }
 
+function bundleStylesheets(destination, html) {
+  const link = '<link rel="stylesheet" href="/(assets/[^"]+\\.css)">';
+  const bundles = {};
+  const output = html.replace(new RegExp(`(?:${link}\\s*){2,}`, "g"), group => {
+    const assets = Array.from(group.matchAll(new RegExp(link, "g")), match => match[1]);
+    const styles = assets.map(asset => fs.readFileSync(path.join(destination, asset), "utf8"));
+    // Rules that depend on the start of a sheet must keep their own sheet.
+    if (styles.some(style => /@(?:charset|import|namespace)\b/i.test(style))) return group;
+    const bundle = `assets/workbench-styles-${Object.keys(bundles).length + 1}.css`;
+    // All inputs and the bundle live in /assets, so relative URLs stay valid.
+    fs.writeFileSync(path.join(destination, bundle), styles.join("\n") + "\n", { flag: "wx" });
+    bundles[bundle] = assets;
+    return `<link rel="stylesheet" href="/${bundle}">\n`;
+  });
+  fs.writeFileSync(path.join(destination, "workbench-styles.json"), JSON.stringify(bundles));
+  return output;
+}
+
 function assemble(destination) {
   fs.cpSync(path.join(__dirname, "workbench"), destination, { recursive: true });
   const componentStyles = [];
@@ -75,23 +95,22 @@ function assemble(destination) {
     }
   }
   const index = path.join(destination, "index.html");
-  if (componentStyles.length) {
-    const html = fs.readFileSync(index, "utf8");
-    fs.writeFileSync(index, html.replace("</head>", componentStyles.join("\n") + "\n</head>"));
-  }
   const chromeStyles = ["frontend/workbench-chrome-theme.css", "rebuild/workbench-chrome.css"]
     .map(file => fs.readFileSync(path.join(app, file), "utf8").trimEnd());
   fs.writeFileSync(path.join(destination, "assets/workbench-chrome.css"), chromeStyles.join("\n") + "\n", { flag: "wx" });
+  const html = fs.readFileSync(index, "utf8").replace("</head>", componentStyles.join("\n") + "\n</head>");
+  fs.writeFileSync(index, bundleStylesheets(destination, html));
   const env = { ...process.env, REBUILD_OUTPUT: destination };
   run(path.join(__dirname, "build.mjs"), ["--out-dir", path.join(destination, "source-frontend")], env);
-  for (const check of ["link-audit", "ui-audit", "audit", "channel-audit", "backend-contract-audit"]) {
-    run(path.join(compiler, check + ".cjs"), [], env);
+  if (!devBuild) {
+    for (const check of ["link-audit", "ui-audit", "audit", "channel-audit", "backend-contract-audit"]) {
+      run(path.join(compiler, check + ".cjs"), [], env);
+    }
   }
-  const html = fs.readFileSync(path.join(destination, "index.html"), "utf8");
-  const styles = [...html.matchAll(/<link rel="stylesheet" href="\/([^"]+)">/g)].map(match => match[1]);
+  const styles = [...fs.readFileSync(index, "utf8").matchAll(/<link rel="stylesheet" href="\/([^"]+)">/g)].map(match => match[1]);
   if (!styles.length) throw Error("Workbench stylesheet list is empty");
   for (const style of styles) fs.accessSync(path.join(destination, style));
-  fs.writeFileSync(evidencePath("style-inventory.json"), JSON.stringify(styles, null, 2));
+  if (!devBuild) fs.writeFileSync(evidencePath("style-inventory.json"), JSON.stringify(styles, null, 2));
 }
 
 function publish(staged, backup) {
@@ -110,7 +129,7 @@ const lock = output + ".build.lock";
 const lockPrefix = path.basename(lock) + "-";
 // A contender publishes a unique PID directory before checking for peers.
 // Live peers cause rejection, so even a simultaneous start can't enter publish twice.
-const stage = fs.mkdtempSync(path.join(parent, lockPrefix + process.pid + "-"));
+const buildBusy = message => Object.assign(new Error(message), { code: "WORKBENCH_BUILD_BUSY" });
 
 function processAlive(pid) {
   if (!Number.isSafeInteger(pid) || pid < 1) return true;
@@ -118,16 +137,16 @@ function processAlive(pid) {
   catch (error) { if (error.code === "ESRCH") return false; throw error; }
 }
 
-function recoverBuilds() {
+function recoverBuilds(stage) {
   let legacyPid;
   try { legacyPid = Number(fs.readFileSync(lock, "utf8").trim()); }
   catch (error) { if (error.code !== "ENOENT") throw error; }
-  if (legacyPid !== undefined && processAlive(legacyPid)) throw Error("Workbench build lock is held: " + lock);
+  if (legacyPid !== undefined && processAlive(legacyPid)) throw buildBusy("Workbench build lock is held: " + lock);
   const stale = [];
   for (const name of fs.readdirSync(parent)) {
     if (!name.startsWith(lockPrefix) || name === path.basename(stage)) continue;
     const pid = Number(name.slice(lockPrefix.length).split("-")[0]);
-    if (processAlive(pid)) throw Error("Another workbench build is running: " + pid);
+    if (processAlive(pid)) throw buildBusy("Another workbench build is running: " + pid);
     stale.push(path.join(parent, name));
   }
   for (const directory of stale) {
@@ -165,7 +184,7 @@ function hashFiles(root, names, { statOnly = false } = {}) {
 }
 
 function buildInputHash() {
-  return hashFiles(app, ["frontend", "rebuild", "shared", "main", "main.js", "preload.js",
+  return hashFiles(app, ["frontend", "rebuild", "shared", "main", "assets", "main.js", "preload.js",
     "package.json", "package-lock.json", "node_modules/fuse.js/dist/fuse.mjs"]);
 }
 
@@ -175,31 +194,53 @@ function reuseBuild(input, stamp) {
     // The output tree is generated: its hash exists only to detect manual
     // tampering or drift, and any real write changes mtime — so stat identity
     // answers it without re-reading ~90MB of built assets per start.
-    return cached.input === input && cached.output === hashFiles(output, ["."], { statOnly: true });
+    return (devBuild || cached.dev === false) && cached.input === input && cached.output === hashFiles(output, ["."], { statOnly: true });
   } catch (_) { return false; }
 }
 
-try {
-  recoverBuilds();
-  if (values["out-dir"] && fs.existsSync(output)) throw Error("--out-dir must point to a new directory");
-  const input = values["if-needed"] && !values["out-dir"] ? buildInputHash() : null;
-  const stamp = output + ".build-input.json";
-  if (input && reuseBuild(input, stamp)) {
-    console.log("Reusing existing workbench build:", output);
-  } else {
+function buildOnce() {
+  const stage = fs.mkdtempSync(path.join(parent, lockPrefix + process.pid + "-"));
+  try {
+    recoverBuilds(stage);
+    if (values["out-dir"] && fs.existsSync(output)) throw Error("--out-dir must point to a new directory");
+    const input = !values["out-dir"] ? buildInputHash() : null;
+    const stamp = output + ".build-input.json";
+    if (values["if-needed"] && input && reuseBuild(input, stamp)) {
+      console.log("Reusing existing workbench build:", output);
+      return;
+    }
     const staged = path.join(stage, "output");
     assemble(staged);
     publish(staged, path.join(stage, "previous"));
     if (input && buildInputHash() === input) {
       const nextStamp = path.join(stage, "build-input.json");
-      fs.writeFileSync(nextStamp, JSON.stringify({ input, output: hashFiles(output, ["."], { statOnly: true }) }));
+      fs.writeFileSync(nextStamp, JSON.stringify({
+        input, output: hashFiles(output, ["."], { statOnly: true }), dev: devBuild,
+      }));
       fs.renameSync(nextStamp, stamp);
     }
     console.log("Built workbench from frontend sources:", output);
-  }
-} finally {
-  // If restoration failed, preserve the old application for the next build.
-  if (!fs.existsSync(path.join(stage, "previous")) || fs.existsSync(output)) {
-    fs.rmSync(stage, { recursive: true, force: true });
+  } finally {
+    // If restoration failed, preserve the old application for the next build.
+    if (!fs.existsSync(path.join(stage, "previous")) || fs.existsSync(output)) {
+      fs.rmSync(stage, { recursive: true, force: true });
+    }
   }
 }
+
+async function main() {
+  const deadline = performance.now() + 120_000;
+  for (;;) {
+    try { return buildOnce(); }
+    catch (error) {
+      if (error.code !== "WORKBENCH_BUILD_BUSY" || !values["if-needed"] || values["out-dir"]
+          || performance.now() >= deadline) throw error;
+      await delay(100 + Math.random() * 100);
+    }
+  }
+}
+
+main().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -3,7 +3,7 @@
 const { profileDataHash } = require('./profile-revisions');
 
 const kinds = { 'profile-start-progress': 'start', 'profile-stop-progress': 'stop', 'profile-sync-progress': 'sync' };
-const launchWarnings = new Set(['kernel-fallback', 'profile-start-page-warning', 'profile-metadata-error']);
+const launchWarnings = new Set(['kernel-fallback', 'profile-start-page-warning', 'profile-metadata-error', 'profile-extension-warning']);
 const comparedSnapshots = new WeakMap();
 
 function recordProfileLifecycle(engine, event) {

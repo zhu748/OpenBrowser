@@ -89,14 +89,15 @@ module.exports = {
         lifecycleGeneration,
         assertCurrent: assertLaunchProfileCurrent,
         onStage: stage => { currentStage = stage; },
+        signal: this.starting?.get(profile.id)?.abortController?.signal,
       }));
     const extensions = this.assignedExtensions(profile.id);
     currentStage = 'kernel'; this.emitStartProgress(profile.id, 'kernel', 30, '正在准备浏览器内核…', lifecycleGeneration);
-    if (!this.kernelStatus().installed && this.preferIndependentKernel
-        && (!profile.engineVersion || profile.engineVersion === 'latest')) {
+    if (this.preferIndependentKernel && (!profile.engineVersion || profile.engineVersion === 'latest')
+        && !this.browserSelection('chromium', profile.engineVersion).browser) {
       // Default profiles retain first-run bootstrap; a fixed selection must
       // fail if missing instead of downloading a different Chrome version.
-      await this.ensureKernelBootstrap();
+      await this.ensureKernelBootstrap({ forChromium: true });
     }
     this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     let recoverControlColor = false;
@@ -373,9 +374,17 @@ module.exports = {
       child.stdout?.on('data', (chunk) => { startupDiagnostic.stdout = appendDiagnosticOutput(startupDiagnostic.stdout, chunk); });
       child.stderr?.on('data', (chunk) => { startupDiagnostic.stderr = appendDiagnosticOutput(startupDiagnostic.stderr, chunk); });
       child.on('error', (error) => { startupDiagnostic.spawnError = error.message; });
+      currentStage = 'cdp';
       this.emitStartProgress(profile.id, 'cdp', 76, '正在等待调试端口…', lifecycleGeneration);
-      port = await this.waitForPort(root, 30000, child);
-      connection = await portConnection(port);
+      const signal = this.starting?.get(profile.id)?.abortController?.signal;
+      port = await this.waitForPort(root, 30000, child, signal);
+      signal?.throwIfAborted();
+      try {
+        connection = await portConnection(port, { signal });
+      } catch (error) {
+        signal?.throwIfAborted();
+        throw error;
+      }
       startupResources.connection = connection;
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
     } catch (error) {
@@ -410,6 +419,7 @@ module.exports = {
     if (profile.cookies && profile.advanced.saveCookies && !profile.advanced.clearCookiesOnStart) { try { await this.importProfileCookies(connection, profile.cookies); } catch (error) { this.emit({ type: 'sync-error', action: 'import-cookies', id: profile.id, message: 'Cookie 导入失败：' + error.message }); } }
     let reconciled;
     try {
+      currentStage = 'extensions';
       const managedPaths = [...this.extensions.values()].map((item) => item.path).filter(Boolean);
       reconciled = await reconcileOnConnection(connection, extensions, managedPaths);
       if (reconciled?.skipped) {
@@ -425,7 +435,7 @@ module.exports = {
       }
     } catch (error) {
       const msg = String(error && error.message || error || '');
-      if (isExtensionsCdpUnavailable(msg)) {
+      if (error?.code !== 'EXTENSION_STARTUP_FAILED' && isExtensionsCdpUnavailable(msg)) {
         reconciled = { installed: extensions, extensions: [], skipped: true, reason: msg };
         this.emit({
           type: 'status',
@@ -439,6 +449,9 @@ module.exports = {
         await this.cleanupStartupResources(startupResources);
         throw error;
       }
+    }
+    for (const message of reconciled.warnings || []) {
+      this.emit({ type: 'profile-extension-warning', id: profile.id, message, lifecycleGeneration });
     }
     const markerProcess = this.startNativeProfileMarker(child.pid, envNumber);
     item = {

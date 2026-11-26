@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { prepareLaunchProfile } = require('../../engine/launch-preparation');
+const { prepareProfileProxyForStart } = require('../../engine/profile-proxy');
 const { profileWriteGuard } = require('../../engine/profile-write-guard');
 const { TrackedProfileMap } = require('../../engine/profile-revisions');
 
@@ -29,13 +30,44 @@ function fixture() {
     emit() {},
     persist: async () => { calls.push('persist'); },
   };
-  const start = onStage => prepareLaunchProfile(engine, profile, {
-    lifecycleGeneration: 1, assertCurrent: profileWriteGuard(engine, profile.id), onStage: onStage || (() => {}),
+  const start = (onStage, signal) => prepareLaunchProfile(engine, profile, {
+    lifecycleGeneration: 1, assertCurrent: profileWriteGuard(engine, profile.id), onStage: onStage || (() => {}), signal,
   });
   return { engine, profile, calls, start, cancel: () => { active = false; } };
 }
 
 async function main() {
+  for (const probe of ['proxy', 'locale']) {
+    const f = fixture(), entered = deferred(), response = deferred();
+    const controller = new AbortController();
+    if (probe === 'proxy') {
+      f.engine.resolveStoredProxyProfile = profile => ({ ...profile, networkMode: 'proxy', proxy: 'http://127.0.0.1:9' });
+      f.engine.prepareProfileProxyForStart = prepareProfileProxyForStart;
+      f.engine.testProxy = async () => {
+        entered.resolve();
+        await response.promise;
+        return { ip: '192.0.2.4' };
+      };
+    } else {
+      f.engine.ensureExitNetworkForLocale = async (_profile, options) => {
+        assert.equal(options.signal, controller.signal);
+        entered.resolve();
+        await response.promise;
+        options.onNetwork({ ip: '192.0.2.4' });
+      };
+    }
+    const rejected = assert.rejects(f.start(null, controller.signal), { code: 'BROWSER_START_CANCELLED' });
+    await entered.promise;
+    controller.abort(Object.assign(Error('cancelled'), { code: 'BROWSER_START_CANCELLED' }));
+    try {
+      await rejected;
+      assert.equal(f.calls.includes('persist'), false);
+    } finally {
+      response.resolve();
+    }
+    await response.promise;
+    assert.equal(f.engine.networkInfo.size, 0, 'a late probe cannot publish after stop');
+  }
   for (const mode of ['cancel', 'edit', 'delete', 'failure-after-cancel']) {
     const f = fixture(), entered = deferred(), response = deferred();
     f.engine.ensureExitNetworkForLocale = async (_profile, options) => {

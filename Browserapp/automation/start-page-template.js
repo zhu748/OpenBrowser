@@ -412,7 +412,7 @@ function buildStartPageHtml(data = {}) {
       options=options||{};
       if(!pid){if(!options.silent)toast('无环境 ID');return Promise.resolve()}
       setRefreshBusy(true);
-      return api('/api/network?pid='+encodeURIComponent(pid)+'&refresh=1').then(function(result){
+      return api('/api/network?pid='+encodeURIComponent(pid)+'&refresh='+(options.silent?'auto':'1')).then(function(result){
         var next=result.data||{};
         if(!next.ip&&!next.probeError)next.probeError='检测服务未返回出口 IP';
         applyNetwork(next);

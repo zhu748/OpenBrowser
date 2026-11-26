@@ -134,18 +134,28 @@ async function reconcileOnConnection(connection, desired, managedPaths = []) {
   const refreshed = await connection.command('Extensions.getExtensions');
   const present = new Map((refreshed.extensions || []).map((item) => [extensionPathKey(item.path), item]));
   const installed = [];
+  const warnings = [];
   for (const extension of desired) {
     const existing = present.get(extensionPathKey(extension.path));
     if (existing?.enabled) { installed.push({ ...extension, chromeExtensionId: existing.id }); continue; }
     if (existing) await connection.command('Extensions.uninstall', { id: existing.id });
-    const result = await connection.command('Extensions.loadUnpacked', { path: extension.path, enableInIncognito: false }, 30000);
-    installed.push({ ...extension, chromeExtensionId: result.id });
+    try {
+      const result = await connection.command('Extensions.loadUnpacked', { path: extension.path, enableInIncognito: false }, 30000);
+      installed.push({ ...extension, chromeExtensionId: result.id });
+    } catch (error) {
+      const denied = /loading of unpacked extensions is disabled by the administrator/i.test(error.message);
+      if (!denied || !extension.builtIn) {
+        throw Object.assign(new Error(`扩展「${extension.name || extension.id}」加载失败：${error.message}`, { cause: error }),
+          { code: 'EXTENSION_STARTUP_FAILED' });
+      }
+      warnings.push(`内核策略禁止加载内置扩展「${extension.name || extension.id}」`);
+    }
   }
-  return { installed, extensions: (await connection.command('Extensions.getExtensions')).extensions || [] };
+  return { installed, warnings, extensions: (await connection.command('Extensions.getExtensions')).extensions || [] };
 }
 
-async function portConnection(port) {
-  const socket = await cdp.browserSocket(port);
+async function portConnection(port, options) {
+  const socket = await cdp.browserSocket(port, options);
   return {
     command(method, params = {}, timeout = 15000) {
       return cdp.call(socket, method, params, timeout);

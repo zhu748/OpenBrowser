@@ -11,6 +11,7 @@ const { KERNEL_POLICY_VERSION, EngineStateUnavailableError,
   inspectSQLiteDatabase, loadEngineStartupState, preserveCorruptEngineState } = require('./index');
 const fs = require('fs');
 const path = require('path');
+const { isDeepStrictEqual } = require('node:util');
 const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
 const { recoverProfileDeletions } = require('./profile-deletion');
 
@@ -47,6 +48,7 @@ module.exports = {
     await this.kernelManager.loadMeta();
     let migrateKernelPolicy = false;
     let recoveredState = false;
+    let extensionsChanged = false;
     let storedIds;
     const existingDatabase = Boolean(inspectSQLiteDatabase(this.dbFile));
 
@@ -90,10 +92,14 @@ module.exports = {
       // Extension directories are independent; refresh them concurrently
       // instead of serializing manifest/locale/hash reads at every startup.
       await Promise.all(extensions.map(async (extension) => {
-        if (!fs.existsSync(extension.path)) return;
+        if (!fs.existsSync(extension.path)) {
+          extensionsChanged = true;
+          return;
+        }
         try {
           const refreshed = await this.readExtension(extension.path, Boolean(extension.builtIn));
           refreshed.addedAt = extension.addedAt || refreshed.addedAt;
+          if (!isDeepStrictEqual(refreshed, extension)) extensionsChanged = true;
           this.extensions.set(refreshed.id, refreshed);
         } catch (_) {
           this.extensions.set(extension.id, extension);
@@ -103,13 +109,17 @@ module.exports = {
       for (const [profileId, ids] of assignments.entries()) {
         this.assignments.set(profileId, ids);
       }
-      const loadedProfiles = this.sqliteStore.getAllProfiles({ withTimestamps: true });
-      for (const raw of loadedProfiles) {
-        try {
-          const profile = this.sanitizeProfile(raw);
-          this.profiles.set(profile.id, profile);
-        } catch (_) {}
+      // IPC remains behind the startup barrier while storage yields between batches.
+      const loadedProfiles = await this.sqliteStore.loadStartupProfiles(
+        profile => this.sanitizeProfile(profile),
+        profile => this.profiles.set(profile.id, profile),
+      );
+      if (typeof this.profiles.contentHash === 'function') {
+        this.profiles.acknowledgeWrites(this.profiles.pendingWrites().filter(([id]) =>
+          this.sqliteStore.hasPersistedProfileHash(id, this.profiles.contentHash(id))));
+        this._profilePersistenceStore = this.sqliteStore;
       }
+      this.profileStartupFailures = this.sqliteStore.countProfileRows() - loadedProfiles;
       const meta = this.sqliteStore.getAllMeta();
       if (typeof meta.preferIndependentKernel === 'boolean') {
         this.preferIndependentKernel = meta.preferIndependentKernel;
@@ -167,6 +177,8 @@ module.exports = {
     await recoverProfileDeletions(this, { recoveredState, storedIds });
     if (bundledExtensionPath && fs.existsSync(path.join(bundledExtensionPath, 'manifest.json'))) {
       const builtIn = await this.readExtension(bundledExtensionPath, true);
+      const previous = this.extensions.get(builtIn.id);
+      if (previous?.addedAt) builtIn.addedAt = previous.addedAt;
       const obsoleteBuiltInIds = [...this.extensions.values()]
         .filter((extension) => extension.builtIn && path.basename(extension.path) === 'bundled-extension' && extension.id !== builtIn.id)
         .map((extension) => extension.id);
@@ -180,9 +192,10 @@ module.exports = {
         for (const id of obsoleteBuiltInIds) this.extensions.delete(id);
       }
       this.extensions.set(builtIn.id, builtIn);
-      await this.persist();
+      extensionsChanged ||= obsoleteBuiltInIds.length > 0 || !isDeepStrictEqual(previous, builtIn);
     }
     this.storageRecovery = recoveredState;
-    if (migrateKernelPolicy || (recoveredState && !this.usingSqlite)) await this.persist();
+    if (migrateKernelPolicy || extensionsChanged || (recoveredState && !this.usingSqlite)
+        || (this.usingSqlite && this.profiles.pendingWrites?.().length)) await this._persistNow();
   },
 };

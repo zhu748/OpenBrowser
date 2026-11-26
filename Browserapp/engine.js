@@ -3,6 +3,7 @@ const fsp = require('fs/promises');
 const path = require('path');
 const { spawn } = require('child_process');
 const cdp = require('./cdp');
+const { TaskScheduler } = require('./automation/task-scheduler');
 const { recordProfileLifecycle, profileLifecycle, recordProfileLaunchWarning, profileLaunchStatus,
   beginProfileStop, observeProfileStop } = require('./engine/profile-lifecycle');
 const { profileWriteGuard } = require('./engine/profile-write-guard');
@@ -119,6 +120,8 @@ const { TrackedProfileMap } = require('./engine/profile-revisions');
 const { assertProfileDataRootSettled, assertProfileNotMaintained } = require('./engine/profile-maintenance');
 const { assertProfileRestoreReady } = require('./automation/cloud/file-restore');
 
+const BROWSER_START_CONCURRENCY = 4;
+
 class BrowserEngine {
   constructor(app, options = {}) {
     this.app = app;
@@ -219,6 +222,10 @@ class BrowserEngine {
     const independent = this.kernelManager.resolveInstalled();
     if (independent) {
       list.push({ name: independent.name, path: independent.path, independent: true, version: independent.version, source: independent.source, engine: independent.engine || 'chromium' });
+    }
+    if (independent?.engine === 'firefox') {
+      const chromium = this.kernelManager.resolveInstalled({ includeFirefoxPin: false });
+      if (chromium && chromium.engine !== 'firefox') list.push(chromium);
     }
     for (const kernel of this.kernelManager.listInstalledKernels()) {
       if (kernel.path && !list.some((item) => item.path === kernel.path)) {
@@ -334,14 +341,18 @@ class BrowserEngine {
     return this.kernelManager.checkInstalledKernelIntegrity();
   }
 
-  async ensureKernelBootstrap() {
-    const installed = this.kernelStatus().kernel || this.candidates().find((item) => item.independent);
+  async ensureKernelBootstrap({ forChromium = false } = {}) {
+    const preferred = this.kernelStatus().kernel;
+    const installed = (!forChromium && preferred) || this.candidates()
+      .find(item => item.independent && (!forChromium || item.engine !== 'firefox'));
     // Per-version downloads are usable before they are made the global
     // default. Do not download Chrome again when either family is installed.
     if (installed) return installed;
     if (!this.kernelBootstrapPromise) {
       this.emit({ type: 'kernel-progress', phase: 'bootstrap', message: '正在检查独立浏览器内核，未安装时将下载 Chrome Stable…' });
-      this.kernelBootstrapPromise = this.ensureIndependentKernel(false)
+      const download = forChromium && preferred?.engine === 'firefox'
+        ? this.downloadChromeStable(false) : this.ensureIndependentKernel(false);
+      this.kernelBootstrapPromise = download
         .catch((error) => {
           this.emit({ type: 'kernel-error', message: '独立内核准备失败：' + error.message });
           throw error;
@@ -544,28 +555,15 @@ class BrowserEngine {
 
   proxyConfig(value) { return parseProxy(value); }
 
-  /**
-   * Live window usage for the proxy-library record a profile is bound to (issue #25).
-   *
-   * A commercial SOCKS5 endpoint usually admits a fixed number of concurrent tunnels, so the same
-   * node can serve the first handful of windows and then reject every later one. Counting the
-   * running windows per proxy is also what the proxy library panel shows, so both the display and
-   * the cap read the same source.
-   *
-   * Windows that are still coming up count too. A start inserts itself into `this.starting` long
-   * before the child process exists, so a check that only looked at `this.running` would let a
-   * batch start every window of a capped proxy: each call would observe the cap as unused because
-   * none of the siblings had finished booting yet. Counting in-flight starts is what makes the
-   * cap hold for the "select N environments -> start" flow, which is exactly when the upstream
-   * tunnel budget is spent fastest.
-   */
-  proxyConcurrencyUsage(profile) {
+  /** Include running windows and starts that have acquired a launch slot. */
+  proxyConcurrencyUsage(profile, { cappedOnly = false } = {}) {
     const association = profileProxyAssociation(profile);
     const proxyId = normalizedProxyAssociationId(association.value);
     if (!proxyId || !this.proxyStore) return null;
     let item = null;
     try { item = this.proxyStore.get?.(proxyId) || null; } catch (_) { return null; }
-    if (!item) return null;
+    const limit = Number.isInteger(item?.maxConcurrency) ? item.maxConcurrency : 0;
+    if (!item || (cappedOnly && !limit)) return null;
     const raw = String(item.raw || '').trim();
     const running = [];
     const seen = new Set([String(profile.id)]);
@@ -584,14 +582,8 @@ class BrowserEngine {
       if (runningItem?.cleanedUp || runningItem?.stopping) continue;
       consider(runningItem?.profile, runningId);
     }
-    for (const startingId of this.starting.keys()) {
-      consider(this.profiles.get(startingId), startingId);
-    }
-    return {
-      item,
-      limit: Number.isInteger(item.maxConcurrency) ? item.maxConcurrency : 0,
-      running,
-    };
+    for (const [id, { proxyReservation }] of this.starting) consider(proxyReservation, id);
+    return { item, limit, running };
   }
 
   /**
@@ -599,7 +591,7 @@ class BrowserEngine {
    * bridge or child process exists, so a blocked start leaves nothing behind to clean up.
    */
   assertProxyConcurrencyAvailable(profile) {
-    const usage = this.proxyConcurrencyUsage(profile);
+    const usage = this.proxyConcurrencyUsage(profile, { cappedOnly: true });
     if (!usage || !usage.limit) return;
     if (usage.running.length < usage.limit) return;
     const name = usage.item.name || `${usage.item.host}:${usage.item.port}`;
@@ -939,10 +931,21 @@ class BrowserEngine {
     return resources.cleanupPromise;
   }
 
-  async waitForPort(root, timeout = 30000, child = null) {
+  async waitForPort(root, timeout = 30000, child = null, signal) {
     const file = path.join(root, 'DevToolsActivePort');
-    const started = Date.now();
-    // Do not delete DevToolsActivePort here — cleared before spawn; post-spawn delete races Chromium.
+    const deadline = performance.now() + timeout;
+    const controller = new AbortController();
+    const cancel = () => controller.abort(signal.reason);
+    const childDone = () => controller.abort();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    let watcher;
+    let wake;
+    const onAbort = () => wake?.();
+    controller.signal.addEventListener('abort', onAbort, { once: true });
+    signal?.addEventListener('abort', cancel, { once: true });
+    child?.once?.('exit', childDone);
+    child?.once?.('error', childDone);
+
     const assertChildAlive = () => {
       if (child?._startupDiagnostic?.spawnError) {
         throw new Error(`Browser process could not start: ${child._startupDiagnostic.spawnError}`);
@@ -950,66 +953,57 @@ class BrowserEngine {
       if (child && isChildExited(child)) {
         throw new Error(formatBrowserStartupError(
           `Browser exited before CDP was ready (code ${child.exitCode}${child.signalCode ? ', signal ' + child.signalCode : ''})`,
-          child,
-          child._startupDiagnostic,
+          child, child._startupDiagnostic,
         ));
       }
     };
-    const tryReadPort = async () => {
+    try {
+      signal?.throwIfAborted();
       try {
-        const content = await fsp.readFile(file, 'utf8');
-        const port = Number(content.split(/\r?\n/)[0]);
-        if (Number.isInteger(port) && port > 0) {
-          try {
-            await cdp.json(`http://127.0.0.1:${port}/json/version`);
-            return port;
-          } catch (_) {
-            // File is written slightly before the DevTools endpoint answers. Measured on a
-            // real launch that gap is ~600ms of Chromium coming up, not idle polling — a
-            // tighter retry loop here was tried and bought nothing, so keep it simple.
-          }
-        }
-      } catch (_) {}
-      return 0;
-    };
-    // Event-driven fast path: watch the profile dir so we react ~1 tick after Chromium
-    // writes DevToolsActivePort, instead of waiting out a fixed 200ms poll. Polling stays
-    // as the fallback — fs.watch is unreliable on some network/virtual filesystems and
-    // platforms, so a watcher failure just degrades to the (slightly tighter) poll.
-    let watcher = null;
-    let wake = null;
-    try { watcher = fs.watch(root, () => { const w = wake; if (w) w(); }); } catch (_) { watcher = null; }
-    try {
-      assertChildAlive();
-      let port = await tryReadPort();
-      if (port) return port;
-      while (Date.now() - started < timeout) {
-        assertChildAlive();
-        await new Promise((resolve) => {
-          let done = false;
-          const finish = () => { if (done) return; done = true; wake = null; clearTimeout(timer); resolve(); };
-          wake = finish;
-          // Backstop timeout: short when watching (event does the real work), tighter than
-          // the old 200ms when we have no watcher to lean on.
-          const timer = setTimeout(finish, watcher ? 250 : 120);
-          if (timer.unref) timer.unref();
+        watcher = fs.watch(root, (_event, name) => {
+          if (!name || name === 'DevToolsActivePort') wake?.();
         });
-        port = await tryReadPort();
-        if (port) return port;
+        watcher.on('error', () => {
+          watcher?.close();
+          watcher = null;
+          wake?.();
+        });
+      } catch (_) { watcher = null; }
+
+      const active = () => !controller.signal.aborted && performance.now() < deadline;
+      while (active()) {
+        assertChildAlive();
+        try {
+          const content = await fsp.readFile(file, { encoding: 'utf8', signal: controller.signal });
+          const port = Number(content.split(/\r?\n/)[0]);
+          if (Number.isInteger(port) && port > 0 && port <= 65535 && active()) {
+            await cdp.json(`http://127.0.0.1:${port}/json/version`, 'GET', {
+              timeoutMs: Math.max(1, Math.min(5000, deadline - performance.now())), signal: controller.signal,
+            });
+            if (active()) {
+              assertChildAlive();
+              return port;
+            }
+          }
+        } catch (_) { /* The browser may publish the port before it can serve requests. */ }
+        if (!active()) break;
+        assertChildAlive();
+        await new Promise(resolve => {
+          const retry = setTimeout(() => wake?.(), Math.min(watcher ? 250 : 120, deadline - performance.now()));
+          wake = () => { clearTimeout(retry); wake = null; resolve(); };
+        });
       }
+      signal?.throwIfAborted();
+      assertChildAlive();
     } finally {
-      wake = null;
-      try { watcher?.close(); } catch (_) {}
+      clearTimeout(timer);
+      watcher?.close();
+      signal?.removeEventListener('abort', cancel);
+      child?.removeListener?.('exit', childDone);
+      child?.removeListener?.('error', childDone);
     }
-    let hint = '';
-    try {
-      if (child && child.exitCode !== null) hint = ` childExit=${child.exitCode}`;
-      else if (child && child.pid) hint = ` childPid=${child.pid} still running`;
-    } catch (_) {}
     throw new Error(formatBrowserStartupError(
-      'Browser started but CDP port was not ready' + hint,
-      child,
-      child?._startupDiagnostic,
+      'Browser started but CDP port was not ready', child, child?._startupDiagnostic,
     ));
   }
 
@@ -1143,6 +1137,11 @@ class BrowserEngine {
     const assertProfileCurrent = profileWriteGuard(this, id);
     const generation = this.reserveLifecycleGeneration(id);
     let active = false;
+    const cancellation = new AbortController();
+    const queuedCancellation = new AbortController();
+    const cancelQueued = () => queuedCancellation.abort(cancellation.signal.reason);
+    cancellation.signal.addEventListener('abort', cancelQueued, { once: true });
+    this.startScheduler ||= new TaskScheduler({ name: 'browser-start', concurrency: BROWSER_START_CONCURRENCY });
     // Publish the queue entry before cleanup or synchronous progress listeners
     // can reenter start() or stop(). A reservation is not yet a new owner.
     const task = Promise.resolve().then(async () => {
@@ -1181,13 +1180,25 @@ class BrowserEngine {
       active = true;
       this.emitStartProgress?.(id, 'prepare', 1, '启动中…', generation);
       this.assertStartGenerationActive(id, generation);
-      await assertProfileRestoreReady(this.profileRoot(id));
-      // stop/delete can invalidate this start while the filesystem check waits.
-      this.assertStartGenerationActive(id, generation);
-      assertProfileCurrent();
-      return run(generation);
+      return this.startScheduler.schedule(async () => {
+        cancellation.signal.removeEventListener('abort', cancelQueued);
+        this.assertStartGenerationActive(id, generation);
+        assertProfileCurrent();
+        const profile = this.resolveStoredProxyProfile(candidate);
+        this.assertProxyConcurrencyAvailable(profile);
+        task.proxyReservation = profile;
+        try {
+          await assertProfileRestoreReady(this.profileRoot(id));
+          this.assertStartGenerationActive(id, generation);
+          assertProfileCurrent();
+          return await run(generation);
+        } finally {
+          task.proxyReservation = null;
+        }
+      }, undefined, { signal: queuedCancellation.signal });
     });
     task.lifecycleGeneration = generation;
+    task.abortController = cancellation;
     this.starting.set(id, task);
     this.invalidateStatusCache?.(id);
     try {
@@ -1200,6 +1211,7 @@ class BrowserEngine {
       }
       throw error;
     } finally {
+      cancellation.signal.removeEventListener('abort', cancelQueued);
       if (this.starting.get(id) === task) this.starting.delete(id);
       this.invalidateStatusCache?.(id);
     }

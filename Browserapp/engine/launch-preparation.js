@@ -45,12 +45,13 @@ function assertExitNetworkPolicy(engine, previous, profile) {
     throw Object.assign(new Error(`出口国家/地区已变化：${previousCountry} → ${currentCountry}，已按「IP 对应国家/地区发生改变停止打开」策略阻断启动`), { code: 'ip-country-changed' });
 }
 
-async function resolveLaunchNetwork(engine, profile, getNetwork, captureNetwork) {
-  const options = { publish: false, network: getNetwork(), onNetwork: captureNetwork };
+async function resolveLaunchNetwork(engine, profile, getNetwork, captureNetwork, signal) {
+  const options = { publish: false, network: getNetwork(), onNetwork: captureNetwork, signal };
   if (!profile.advanced?.stopOpenNet) return engine.ensureExitNetworkForLocale(profile, options);
   try {
     await engine.ensureExitNetworkForLocale(profile, { ...options, force: true });
   } catch (error) {
+    signal?.throwIfAborted();
     if (error.code === 'PROFILE_STALE_REV' || error.code === 'PROFILE_MAINTENANCE') throw error;
     throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动：' + error.message), { code: 'network-unavailable' });
   }
@@ -58,17 +59,32 @@ async function resolveLaunchNetwork(engine, profile, getNetwork, captureNetwork)
     throw Object.assign(new Error('网络不可用，已按「网络不通停止打开」策略停止启动'), { code: 'network-unavailable' });
 }
 
+// Lookups may be shared with other environments. Cancel this consumer while
+// letting the shared lookup finish within its own transport deadline.
+async function waitForLaunchProbe(probe, signal) {
+  if (!signal) return probe;
+  let stopWaiting;
+  const interrupted = new Promise((_resolve, reject) => {
+    stopWaiting = () => reject(signal.reason);
+    if (signal.aborted) stopWaiting();
+    else signal.addEventListener('abort', stopWaiting, { once: true });
+  });
+  try { return await Promise.race([probe, interrupted]); }
+  finally { signal.removeEventListener('abort', stopWaiting); }
+}
+
 /** Shared pre-spawn transaction. Publication rechecks the captured profile revision;
  * browser-specific launchers retain kernel selection, spawning and resource cleanup.
  * @param {object} engine
  * @param {object} profile
- * @param {{lifecycleGeneration: number|null, assertCurrent: Function, onStage: Function}} options
+ * @param {{lifecycleGeneration: number|null, assertCurrent: Function, onStage: Function, signal?: AbortSignal}} options
  * @returns {Promise<{profile: object, assertCurrent: Function}>} */
-async function prepareLaunchProfile(engine, profile, { lifecycleGeneration, assertCurrent, onStage }) {
+async function prepareLaunchProfile(engine, profile, { lifecycleGeneration, assertCurrent, onStage, signal }) {
   const previous = { exitIp: profile.exitIp, exitCountryCode: profile.exitCountryCode };
   let network;
   const captureNetwork = value => { network = value; };
   const assertActive = () => {
+    signal?.throwIfAborted();
     engine.assertStartGenerationActive(profile.id, lifecycleGeneration);
     assertCurrent();
   };
@@ -93,14 +109,16 @@ async function prepareLaunchProfile(engine, profile, { lifecycleGeneration, asse
   stage('resources', 8, '正在检测内存与磁盘…');
   await waitActive(assertResourceGateForLaunch({ diskRoot: engine.profileRoot(profile.id) }));
   stage('proxy', 18, '正在检测代理与出口…');
-  const candidate = await waitActive(engine.prepareProfileProxyForStart(profile, { publish: false, onNetwork: captureNetwork }));
+  const candidate = await waitActive(engine.prepareProfileProxyForStart(profile, {
+    publish: false, onNetwork: captureNetwork, signal,
+  }));
   publish(candidate);
-  await waitActive(resolveLaunchNetwork(engine, profile, () => network, captureNetwork));
+  await waitActive(waitForLaunchProbe(resolveLaunchNetwork(engine, profile, () => network, captureNetwork, signal), signal));
   publish(engine.applyResolvedLocale(profile, network));
   assertExitNetworkPolicy(engine, previous, profile);
   // Persist resolved credentials and locale before either browser is spawned.
-  await waitActive(engine.persist());
+  if (!engine.canSkipProfilePersist?.(profile.id)) await waitActive(engine.persist());
   return { profile, assertCurrent };
 }
 
-module.exports = { prepareLaunchProfile, createStartupResources, reportPlatformPreflight, assertExitNetworkPolicy };
+module.exports = { prepareLaunchProfile, createStartupResources, reportPlatformPreflight, assertExitNetworkPolicy, waitForLaunchProbe };

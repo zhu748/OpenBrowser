@@ -7,6 +7,11 @@ const { ProfileStoreSqlite } = require('../automation/profile-store-sqlite');
 const { TrackedProfileMap } = require('./profile-revisions');
 
 module.exports = {
+  canSkipProfilePersist(id) {
+    return Boolean(this.usingSqlite && this.sqliteStore && this._profilePersistenceStore === this.sqliteStore
+      && this.profiles instanceof TrackedProfileMap && !this.profiles.hasPendingWrite(id));
+  },
+
   persist() {
     this._persistWriter ||= createCoalescedWriter({
       delayMs: 50,

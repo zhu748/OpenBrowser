@@ -5,12 +5,12 @@
 function createAutomationStop({ rpaEngine, localApi, proxyStore, accountStore, transferStore, rpaStore }) {
   let pending;
   const steps = [
-    ['rpa', () => rpaEngine.stop()],
-    ['local-api', () => localApi.stop()],
-    ['proxy-store', () => proxyStore.flush?.()],
+    ['rpa', () => rpaEngine?.stop()],
+    ['local-api', () => localApi?.stop()],
+    ['proxy-store', () => proxyStore?.flush?.()],
     ['account-store', () => accountStore.flush()],
     ['transfer-store', () => transferStore.flush()],
-    ['rpa-store', () => rpaStore.flush?.()],
+    ['rpa-store', () => rpaStore?.flush?.()],
   ];
   const drain = async () => {
     const errors = [];

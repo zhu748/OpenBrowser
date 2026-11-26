@@ -2,7 +2,6 @@ import { h as api, m as loadDictionary, ti as hasKernelFields } from './utils-BI
 import { i as cookiesFromImport } from './cookie-CqdL0VrU.js';
 import { t as formatDate } from './format-_cvrr_iF.js';
 import { o as toESM } from './rolldown-runtime-BCiCTKAo.js';
-import { t as loadExcel } from './exceljs.min-DfecxsXL.js';
 import { cellText, parseAccountLine, parseAccounts, parseStartupUrls } from './workbench-profile-file-values.js';
 import { importColumns, templateInstructions, textTemplate } from './workbench-profile-file-columns.js';
 
@@ -19,11 +18,15 @@ function download(body, type, extension) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-const newWorkbook = () => new (toESM(loadExcel(), 1).default.Workbook)();
+async function newWorkbook() {
+  const { t: loadExcel } = await import('./exceljs.min-DfecxsXL.js');
+  const { Workbook } = toESM(loadExcel(), 1).default;
+  return new Workbook();
+}
 const alignment = { wrapText: true, horizontal: 'left', vertical: 'top' };
 
 async function downloadWorkbook({ afterAddColumns, afterAddExplain } = {}) {
-  const book = newWorkbook();
+  const book = await newWorkbook();
   const sheet = book.addWorksheet('Sheet1');
   sheet.properties.defaultRowHeight = 30;
   const standard = await importColumns();
@@ -65,7 +68,7 @@ function parseRow(values, rowNum, isWorkbook) {
 
 async function readWorkbook(file) {
   try {
-    const book = newWorkbook();
+    const book = await newWorkbook();
     const columns = await importColumns();
     const rows = [];
     await book.xlsx.load(await file.arrayBuffer());

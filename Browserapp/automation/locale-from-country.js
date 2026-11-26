@@ -252,8 +252,11 @@ function normalizeLanguageTags(value) {
     if (typeof entry !== 'string') continue;
     // Legacy imports may contain underscores or an Accept-Language weight.
     const tag = entry.trim().match(/^([a-z0-9_-]+)(?: *; *q *= *[0-9.]+)?$/i)?.[1];
-    if (!tag || /^(ip|system|real|profile)$/i.test(tag)) continue;
-    try { tags.add(Intl.getCanonicalLocales(tag.replace(/_/g, '-'))[0]); }
+    if (!tag || /^(ip|system|real|profile|custom)$/i.test(tag)) continue;
+    try {
+      const [locale] = Intl.getCanonicalLocales(tag.replace(/_/g, '-'));
+      if (Intl.DateTimeFormat.supportedLocalesOf(locale).length) tags.add(locale);
+    }
     catch (_) { /* Ill-formed tags cannot be delivered to the browser. */ }
   }
   return [...tags];
@@ -332,6 +335,7 @@ function resolveProfileTimezone(profile = {}, network = {}) {
  */
 function resolveProfileLanguage(profile = {}, network = {}) {
   const privacy = (profile && profile.privacy) || {};
+  const fallback = normalizeLanguageTags(profile?.language)[0] || 'en-US';
   let mode = String(privacy.languageMode || '').trim();
   if (!mode) {
     if (privacy.langFromIp !== false && (privacy.uiLanguage === 'profile' || !privacy.uiLanguage)) {
@@ -353,10 +357,10 @@ function resolveProfileLanguage(profile = {}, network = {}) {
 
   if (mode.toLowerCase() === 'ip') {
     const cc = (network && network.countryCode) || (profile && profile.exitCountryCode) || '';
-    return localeFromCountryCode(cc, (profile && profile.language) || 'en-US');
+    return localeFromCountryCode(cc, fallback);
   }
 
-  return normalizeLanguageTags([mode])[0] || (profile && profile.language) || 'en-US';
+  return normalizeLanguageTags([mode])[0] || fallback;
 }
 
 const api = {

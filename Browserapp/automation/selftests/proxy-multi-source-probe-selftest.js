@@ -33,18 +33,24 @@ async function run() {
   const requireProxy = createRequire(proxyFile);
   const isolated = { exports: {} };
   let directRequests = 0;
+  const requestedUrls = new Set();
   vm.runInNewContext(fs.readFileSync(proxyFile, 'utf8'), {
     module: isolated, process, console, Buffer, setTimeout, clearTimeout,
     require: name => name === './network/outbound' ? {
       ...requireProxy(name),
       async fetchUrlText(url) {
         directRequests++;
+        requestedUrls.add(url);
         if (!url.startsWith('http://ip-api.com/')) throw Error('fixture unavailable');
         return { status: 200, body: JSON.stringify({ status: 'success', query: '203.0.113.10', countryCode: 'CN' }) };
       },
     } : requireProxy(name),
   }, { filename: proxyFile });
-  const fresh = await isolated.exports.lookupDirectCountry();
+  const [fresh, concurrent] = await Promise.all([
+    isolated.exports.lookupDirectCountry(), isolated.exports.lookupDirectCountry(),
+  ]);
+  assert.strictEqual(concurrent.ip, fresh.ip);
+  assert.strictEqual(directRequests, requestedUrls.size, 'concurrent callers share one provider lookup');
   const requestCount = directRequests;
   const cached = await isolated.exports.lookupDirectCountry();
   assert.strictEqual(fresh.ip, '203.0.113.10');

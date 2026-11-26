@@ -18,24 +18,25 @@ async function check(name, action) { try { await action(); results.push({name,ok
       engine.resolveStoredProxyProfile = value => value;
       engine.testProxy = async () => { throw Object.assign(new Error('ECONNREFUSED'),{code:'ECONNREFUSED'}); };
       const profile = {id:'fail-closed',name:'Test',networkMode:'proxy',proxy:'socks5://127.0.0.1:9',proxyMeta:{checkOnStart:true,requireReady:false,notReadyPolicy:policy,allowDirectFallback:true}};
-      await assert.rejects(engine.prepareProfileProxyForStart(profile));
+      await assert.rejects(engine.prepareProfileProxyForStart(profile), { code: 'proxy-not-ready' });
       assert.equal(profile.networkMode,'proxy');
     });
   }
   await check('missing proxy fails before any direct probe', async () => {
     const engine = Object.create(BrowserEngine.prototype);
-    engine.networkInfo = new Map(); engine.emit = () => {}; engine.resolveStoredProxyProfile = value => value;
+    engine.networkInfo = new Map(); engine.profiles = new Map(); engine.emit = () => {}; engine.resolveStoredProxyProfile = value => value;
     engine.testProxy = async () => { throw new Error('unexpected probe'); };
-    await assert.rejects(engine.prepareProfileProxyForStart({id:'fail-closed',name:'Test',networkMode:'proxy',proxy:''}));
+    await assert.rejects(engine.prepareProfileProxyForStart({id:'fail-closed',name:'Test',networkMode:'proxy',proxy:''}), { code: 'proxy-required' });
   });
   await check('probe service timeout cannot use old geography as proof of a live route', async () => {
     const engine = Object.create(BrowserEngine.prototype);
-    engine.networkInfo = new Map(); engine.emit = () => {}; engine.resolveStoredProxyProfile = value => value;
+    engine.networkInfo = new Map(); engine.profiles = new Map(); engine.emit = () => {}; engine.resolveStoredProxyProfile = value => value;
     engine.testProxy = async () => { throw Object.assign(new Error('fixture probe timeout'),{code:'probe-unavailable',probeUnavailable:true}); };
-    await assert.rejects(engine.prepareProfileProxyForStart({id:'fail-closed',name:'Test',networkMode:'proxy',proxy:'http://127.0.0.1:9',exitIp:'192.0.2.99',exitCountryCode:'US'}));
+    await assert.rejects(engine.prepareProfileProxyForStart({id:'fail-closed',name:'Test',networkMode:'proxy',proxy:'http://127.0.0.1:9',exitIp:'192.0.2.99',exitCountryCode:'US'}), { code: 'probe-unavailable' });
   });
   await check('explicit direct mode remains an intentional choice', async () => {
     const engine = Object.create(BrowserEngine.prototype);
+    engine.profiles = new Map();
     engine.resolveStoredProxyProfile = value => value;
     const result = await engine.prepareProfileProxyForStart({id:'direct-choice',name:'Test',networkMode:'direct',proxy:'Direct'});
     assert.equal(result.networkMode,'direct');

@@ -205,6 +205,22 @@ const repo = path.resolve(__dirname, "../..");
     const text = await fs.readFile(textExport, "utf8");
     await page.getByRole("button", { name: "添加账号", exact: true }).first().click();
     await page.getByText("模板导入", { exact: true }).click();
+    const template = path.join(data, "account-import-template.xlsx");
+    await app.evaluate(({ session }, filePath) => {
+      session.defaultSession.once("will-download", (_event, item) => {
+        item.setSavePath(filePath);
+        item.once("done", (_event, state) => { globalThis.__accountTemplateDownloadState = state; });
+      });
+    }, template);
+    await page.getByText("账号导入模板", { exact: true }).click();
+    await waitUntil(() => app.evaluate(() => globalThis.__accountTemplateDownloadState));
+    assert.equal(await app.evaluate(() => globalThis.__accountTemplateDownloadState), "completed");
+    let hasExample = false;
+    for await (const rows of readXlsxSheets(await fs.readFile(template), { maxRows: 2 })) {
+      hasExample ||= rows.some(row => row.cells.some(cell => cell.text === "example@gmail.com"));
+    }
+    assert.ok(hasExample, "the downloaded workbook contains the example account");
+    result.checks.push("首次下载账号导入模板按需加载 XLSX 工具，生成可读取的工作簿");
     await page.getByRole("button", { name: "上传文件", exact: true }).click();
     await page.getByText("roundtrip.txt", { exact: true }).waitFor();
     await page.locator(".upload-card").evaluate((element, contents) => {

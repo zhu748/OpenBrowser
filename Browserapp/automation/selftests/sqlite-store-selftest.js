@@ -117,6 +117,16 @@ async function checkLegacySyncPreservesUnreadableRows() {
 async function main() {
   console.log('Running SQLite Modernization & Reliability Test Suite...');
   await checkLegacySyncPreservesUnreadableRows();
+  await withEngineFixture('ob-sqlite-invalid-profile-', async boot => {
+    const original = await boot();
+    original.sqliteStore.saveProfile({ id: 'invalid-profile' });
+    const restarted = await boot();
+    assert.equal(restarted.profiles.has('invalid-profile'), false);
+    assert.equal(restarted.sqliteStore.hasProfile('invalid-profile'), true);
+    assert.equal(restarted.profileStartupFailures, 1);
+    assert.equal(restarted.sqliteStore.decodeFailureReport().samples[0].context, 'startup-profile-validation');
+    assert.throws(() => restarted.exportEngineState(), { code: 'STORAGE_DECODE_FAILED' });
+  });
 
   // ==========================================
   // Test 1: Migration & Idempotence

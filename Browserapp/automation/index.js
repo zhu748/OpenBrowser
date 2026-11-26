@@ -36,19 +36,35 @@ async function startAutomation(context = {}) {
   } = context;
 
   const userDataPath = app.getPath('userData');
+  const reportApiError = error => emit({ type: 'local-api-error', message: error.message });
+  const reportStorageError = (feature, error) => emit({ type: 'storage-error', feature, message: error.message });
   const keyStore = new ApiKeyStore(userDataPath);
-  let effectiveApiKey = await keyStore.resolve(context.apiKey || process.env.OPENBROWSER_API_KEY);
   const keyFilePath = keyStore.filePath;
+  const apiKeyReady = keyStore.resolve(context.apiKey || process.env.OPENBROWSER_API_KEY)
+    .catch(error => { reportApiError(error); return null; });
 
-  const storePath = path.join(userDataPath, 'rpa-store.json');
-  const rpaStore = new RpaStore(storePath);
-  await rpaStore.load();
+  const rpaStorage = new RpaStore(path.join(userDataPath, 'rpa-store.json'));
+  const rpaReady = rpaStorage.load().then(() => rpaStorage, error => {
+    reportStorageError('rpa', error);
+    return null;
+  });
 
-  const proxyStore = new ProxyStore(path.join(userDataPath, 'proxy-library.json'));
-  await proxyStore.load();
-  await context.beforeApiStart?.(proxyStore);
+  const proxyStorage = new ProxyStore(path.join(userDataPath, 'proxy-library.json'));
+  const proxyStore = await proxyStorage.load().then(() => proxyStorage, error => {
+    reportStorageError('proxies', error);
+    return null;
+  });
+  let recoveryError;
+  try {
+    await context.beforeApiStart?.(proxyStore);
+    if (proxyStore) await engine?.setProxyStore?.(proxyStore);
+  } catch (error) {
+    recoveryError = error;
+    reportApiError(error);
+  }
   const accountStore = new AccountStore(path.join(userDataPath, 'platform-accounts.enc'), {
     recoverProfileChanges: async journal => {
+      if (recoveryError) throw recoveryError;
       const conflicts = await require('../rebuild/accounts').restoreAccountProfiles(engine, journal);
       if (conflicts.length) emit({ type: 'storage-error', feature: 'accounts',
         message: `账号库恢复时保留了 ${conflicts.length} 个窗口的后续账号修改` });
@@ -57,13 +73,13 @@ async function startAutomation(context = {}) {
   const transferStore = new TransferStore(path.join(userDataPath, 'window-transfers.enc'));
   // A damaged optional store locks that feature without preventing recovery,
   // the local API, or RPA from starting. Writes remain blocked in the store.
-  for (const [feature, store] of [['accounts', accountStore], ['transfers', transferStore]]) {
+  await Promise.all([['accounts', accountStore], ['transfers', transferStore]].map(async ([feature, store]) => {
     try { await store.load(); }
-    catch (error) { emit({ type: 'storage-error', feature, message: error.message }); }
-  }
-  await engine?.setProxyStore?.(proxyStore);
+    catch (error) { reportStorageError(feature, error); }
+  }));
+  const [effectiveApiKey, rpaStore] = await Promise.all([apiKeyReady, rpaReady]);
 
-  const rpaEngine = new RpaEngine({
+  const rpaEngine = rpaStore && new RpaEngine({
     engine,
     store: rpaStore,
     emit: (event) => emit(event),
@@ -86,7 +102,7 @@ async function startAutomation(context = {}) {
 
   const appCenter = new AppCenter({ engine });
 
-  const localApi = new LocalApiServer({
+  const localApi = effectiveApiKey && !recoveryError ? new LocalApiServer({
     host: context.apiHost || '127.0.0.1',
     port,
     apiKey: effectiveApiKey,
@@ -98,10 +114,20 @@ async function startAutomation(context = {}) {
     appCenter,
     proxyStore,
     getVersion: () => app.getVersion(),
-  });
+  }) : null;
 
-  const info = context.apiEnabled === false ? { ...localApi.info(), enabled: false } : { ...await localApi.start(), enabled: true };
-  emit({ type: 'local-api', ...info });
+  let info = null;
+  if (localApi) {
+    info = { ...localApi.info(), enabled: false };
+    if (context.apiEnabled !== false) {
+      try { info = { ...await localApi.start(), enabled: true }; }
+      catch (error) {
+        await localApi.stop();
+        reportApiError(error);
+      }
+    }
+    emit({ type: 'local-api', ...info });
+  }
 
   return {
     localApi,
@@ -109,7 +135,7 @@ async function startAutomation(context = {}) {
     rpaStore,
     syncBridge,
     appCenter,
-    proxyStore,
+    proxyStore: recoveryError ? null : proxyStore,
     keyStore,
     accountStore,
     transferStore,
@@ -117,6 +143,7 @@ async function startAutomation(context = {}) {
     apiKey: effectiveApiKey,
     apiKeyFile: keyFilePath,
     async rotateApiKey() {
+      if (!localApi) throw new Error('本地 API 服务尚未就绪');
       const newKey = await keyStore.rotate();
       this.apiKey = newKey;
       localApi.setApiKey(newKey);

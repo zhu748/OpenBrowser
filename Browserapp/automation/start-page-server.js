@@ -1160,7 +1160,7 @@ class StartPageServer {
     res.end(JSON.stringify(body));
   }
 
-  async #resolveNetwork(session, refresh) {
+  async #resolveNetwork(session, refresh, force) {
     const route = session.networkRoute;
     if (!refresh) {
       if (session.network) return session.network;
@@ -1182,7 +1182,7 @@ class StartPageServer {
       const network = await (route === 'proxy'
         ? this.engine.testProxy(profile, { proxy, allowExtract: false })
         : route === 'system' ? this.engine.lookupSystemNetwork()
-          : this.lookupDirectNetwork({ force: true }));
+          : this.lookupDirectNetwork({ force }));
       if (this.getSession(session.pid || session.serial) !== session) return null;
       const stale = network?.stale === true || network?.probeUnavailable === true;
       if (!network?.ip || (stale && session.network?.ip)) throw new Error(PROBE_ERROR);
@@ -1353,9 +1353,9 @@ h1{margin:0 0 12px;font-size:20px}p{margin:8px 0;color:#b7becc}code{color:#93c5f
     }
 
     if (pathname === '/api/network') {
-      const refresh = query.refresh === '1' || query.refresh === 'true';
+      const force = query.refresh === '1' || query.refresh === 'true';
       try {
-        const network = await this.#resolveNetwork(session, refresh);
+        const network = await this.#resolveNetwork(session, force || query.refresh === 'auto', force);
         if (!network) return this.#json(res, 404, { ok: false, msg: 'network not found', pid });
         return this.#json(res, 200, { ok: true, data: network });
       } catch (error) {

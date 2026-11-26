@@ -26,7 +26,7 @@ function registerAutomationControlIpc({ registerTrustedIpc, getAutomation, getMa
   register('transfers:import', ({ automation }, _event, values) => transfers(automation).import(values));
   register('transfers:delete', ({ automation }, _event, id) => transfers(automation).remove(id));
   register('automation:cookie-warmup', ({ automation }, _event, payload) => {
-    if (!automation) throw new Error('自动化服务尚未就绪');
+    if (!automation?.rpaEngine) throw new Error('自动化服务尚未就绪');
     return startCookieWarmup({ engine: automation.rpaEngine.engine, rpaStore: automation.rpaStore, rpaEngine: automation.rpaEngine }, payload);
   });
   register('automation:rpa-status', ({ automation }) => automation?.rpaEngine?.getStatus?.() || { running: [], count: 0 });
@@ -34,15 +34,15 @@ function registerAutomationControlIpc({ registerTrustedIpc, getAutomation, getMa
   register('automation:rpa-tasks', ({ automation }, _event, filter) => automation?.rpaStore?.listTasks?.(filter || {}) || []);
   register('automation:rpa-get-plan', ({ automation }, _event, id) => automation?.rpaStore?.getPlan?.(String(id || '')) || null);
   register('automation:rpa-save-plan', ({ automation }, _event, plan) => {
-    if (!automation) throw new Error('Automation stack is not ready');
+    if (!automation?.rpaStore) throw new Error('Automation stack is not ready');
     return automation.rpaStore.upsertPlan(plan);
   });
   register('automation:rpa-delete-plan', ({ automation }, _event, id) => {
-    if (!automation) throw new Error('Automation stack is not ready');
+    if (!automation?.rpaStore) throw new Error('Automation stack is not ready');
     return automation.rpaStore.deletePlan(String(id || ''), (taskId) => automation.rpaEngine?.isTaskActive?.(taskId));
   });
   register('automation:rpa-run', async ({ automation }, _event, payload) => {
-    if (!automation) throw new Error('Automation stack is not ready');
+    if (!automation?.rpaEngine) throw new Error('Automation stack is not ready');
     if (payload?.plan_id) return automation.rpaEngine.runPlan(String(payload.plan_id), payload);
     if (payload?.task_id) return automation.rpaEngine.runTask(String(payload.task_id), payload);
     if (Array.isArray(payload?.steps)) {
@@ -161,7 +161,7 @@ function registerAutomationControlIpc({ registerTrustedIpc, getAutomation, getMa
     return { apiKey: newKey };
   });
   register('automation:rpa-task-delete', async ({ automation }, _event, ids) => {
-    if (!automation) throw new Error('Automation stack is not ready');
+    if (!automation?.rpaStore) throw new Error('Automation stack is not ready');
     const list = [...new Set((Array.isArray(ids) ? ids : [ids]).map((id) => String(id || '').trim()).filter(Boolean))];
     const deleted = []; const skipped = [];
     for (const id of list) {
