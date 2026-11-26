@@ -79,7 +79,8 @@ function buildDocumentDeliveryProbe(fingerprint, { paused = false } = {}) {
       if (Function.prototype.toString.call(Function.prototype.toString, ${token}, 'documentInstalled') === true)
         return ${snapshot};
     } catch (_) {}
-    return { probeError: '指纹脚本未完成安装' };
+    return { probeError: '指纹脚本未完成安装', installationMissing: true,
+      blankDocument: globalThis.location?.href === 'about:blank' };
   })()`;
 }
 

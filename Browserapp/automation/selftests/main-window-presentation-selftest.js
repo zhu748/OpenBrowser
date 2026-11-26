@@ -29,7 +29,9 @@ function fixture({ settingsStore, loadSettingsForStartup = () => Promise.resolve
     constructor() {
       super();
       window = this;
-      this.webContents = {};
+      this.webContents = new EventEmitter();
+      this.webContents.getURL = () => this.url;
+      this.webContents.isCrashed = () => false;
       this.visible = false;
       this.destroyed = false;
       this.shows = 0;
@@ -62,6 +64,7 @@ function fixture({ settingsStore, loadSettingsForStartup = () => Promise.resolve
     createWindowCloseHandler: (win, options) => createWindowCloseHandler(win, { ...options, platform: 'linux' }),
     attachShellNavigationGuard() {}, createShellNavigationPolicy() {},
     rebuildProtocol: { DOCUMENT: 'local-workbench-fixture' },
+    isTrustedAppIndexUrl: value => value?.startsWith('local-workbench-fixture'),
   };
   const createWindow = mainFunction('createWindow', context);
   const creation = createWindow();
@@ -846,6 +849,33 @@ test('a replacement navigation can present the window after the initial load is 
   await assert.rejects(creation, error => error === cancelled);
   window.emit('ready-to-show');
   assert.equal(window.shows, 1);
+});
+
+test('a generic Electron load error preserves a ready workbench document', async () => {
+  const { window, loading, creation } = fixture();
+  window.url = 'local-workbench-fixture';
+  window.webContents.emit('dom-ready');
+  window.url += '#/browser/list';
+  window.webContents.emit('did-start-navigation', {}, window.url, true, true);
+  loading.reject(Object.assign(new Error('generic navigation error'), { code: 'ERR_FAILED', errno: -2 }));
+  await creation;
+  assert.equal(window.shows, 1);
+  assert.equal(window.webContents.listenerCount('dom-ready'), 0);
+});
+
+test('without a live ready document a generic Electron load error remains fatal', async () => {
+  for (const state of ['pending', 'changed', 'replaced', 'crashed']) {
+    const { window, loading, creation } = fixture();
+    window.url = 'local-workbench-fixture';
+    if (state !== 'pending') window.webContents.emit('dom-ready');
+    if (state === 'changed') window.url = 'about:blank';
+    if (state === 'replaced') window.webContents.emit('did-start-navigation', {}, window.url, false, true);
+    if (state === 'crashed') window.webContents.isCrashed = () => true;
+    const failure = Object.assign(new Error('generic navigation error'), { code: 'ERR_FAILED', errno: -2 });
+    loading.reject(failure);
+    await assert.rejects(creation, error => error === failure);
+    assert.equal(window.webContents.listenerCount('dom-ready'), 0);
+  }
 });
 
 test('startup presentation does not bring the window forward during quit', async () => {

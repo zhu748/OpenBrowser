@@ -906,8 +906,27 @@ async function createWindow() {
     policy: createShellNavigationPolicy({ localUi: roxyPreview }),
     onBlocked: ({ url, reason }) => console.warn('[shell] blocked navigation:', url, reason),
   });
-  if (roxyPreview) await win.loadURL(rebuildProtocol.DOCUMENT);
-  else await win.loadFile('index.html');
+  const contents = win.webContents;
+  let trustedDocumentReady = false;
+  const resetDocument = (_event, _url, isSameDocument, isMainFrame) => {
+    if (isMainFrame && !isSameDocument) trustedDocumentReady = false;
+  };
+  const recordDocumentReady = () => { trustedDocumentReady = isTrustedAppIndexUrl(contents.getURL()); };
+  contents.on('did-start-navigation', resetDocument);
+  contents.on('dom-ready', recordDocumentReady);
+  try {
+    if (roxyPreview) await win.loadURL(rebuildProtocol.DOCUMENT);
+    else await win.loadFile('index.html');
+  } catch (error) {
+    // Electron can report a generic load failure when its load promise stops
+    // tracking a navigation. The trusted main document may already be ready.
+    const genericFailure = error?.code === 'ERR_FAILED' || error?.errno === -2;
+    if (!genericFailure || !trustedDocumentReady || win.isDestroyed() || contents.isCrashed()
+        || !isTrustedAppIndexUrl(contents.getURL())) throw error;
+  } finally {
+    contents.removeListener('did-start-navigation', resetDocument);
+    contents.removeListener('dom-ready', recordDocumentReady);
+  }
   // A paint event and a successful load are alternatives, not two restores.
   present();
 }

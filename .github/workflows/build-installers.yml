@@ -189,6 +189,19 @@ jobs:
           test -z "$(git ls-files -- roxy-ui)"
           workbench_sha="$(node scripts/package-digests.js roxy-ui)"
           printf 'sha=%s\n' "$workbench_sha" >> "$GITHUB_OUTPUT"
+      - name: Verify the Windows workbench and browser startup
+        if: runner.os == 'Windows'
+        env:
+          GH_TOKEN: ''
+        run: |
+          set -euo pipefail
+          chrome_bin=$(node -e '
+            const { BrowserKernelManager } = require("./automation/browser-kernel");
+            new BrowserKernelManager(process.argv[1]).ensureIntegrated()
+              .then(kernel => process.stdout.write(kernel.path))
+              .catch(error => { console.error(error); process.exitCode = 1; });
+          ' "$RUNNER_TEMP/openbrowser-browsers")
+          OPENBROWSER_TEST_KERNEL_BINARY="$chrome_bin" node rebuild/profile-lifecycle-ui-selftest.cjs
       - name: Install NSIS
         if: runner.os == 'Windows'
         shell: pwsh

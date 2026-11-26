@@ -27,7 +27,8 @@ const crypto = require('crypto');
 const { ServiceWorkerScriptGate } = require('../automation/service-worker-script-gate');
 const { OpenerlessPageGate } = require('../automation/openerless-page-gate');
 const { closePageFingerprintConnection } = require('./fingerprint-transport');
-const { FingerprintSession } = require('./fingerprint-session');
+const { FingerprintSession, isActiveFingerprintSession } = require('./fingerprint-session');
+const { navigateStartupDocument } = require('./startup-session');
 const { applyNetworkConditions, applyNavigationNetworkConditions } = require('./network-conditions');
 const { hostScreenSummary } = require('./launch-display');
 const { readKernelVersion } = require('./launch-profile');
@@ -924,11 +925,7 @@ module.exports = {
     item.fingerprint = baseFp;
     return injectFp;
   },
-  /**
-   * 启动前 CDP 指纹交付校验：
-   * 在导航目标站点/启动页之前，用 CDP 在初始页面执行单次探针 Runtime.evaluate，
-   * 校验实际交付给页面的指纹值与配置是否存在直接矛盾。
-   */
+  /** Verify the live startup document before opening any configured URL. */
   async verifyStartupFingerprintDelivery(item, profile, fingerprint = null, options = {}) {
     const profileId = profile?.id || item?.profile?.id || 'unknown';
     const maxConsecutiveFailures = options.maxConsecutiveFailures || 3;
@@ -987,20 +984,38 @@ module.exports = {
       try {
         const tabs = await cdp.tabs(port).catch(() => []);
         // Probe initial blank tab or current start page tab
-        const probeTab = tabs.find((t) => isEphemeralDocumentUrl(t.url))
-          || tabs.find((t) => this.isStartPageUrl(t.url)) || tabs[0];
+        const probeTab = tabs.find((t) => isEphemeralDocumentUrl(t.url) && item.fpAppliedTargets?.has(t.id))
+          || tabs.find((t) => isEphemeralDocumentUrl(t.url))
+          || tabs.find((t) => this.isStartPageUrl(t.url));
         if (!probeTab?.webSocketDebuggerUrl) {
           probeWarning = '未找到可用于探针校验的初始标签页';
           liveProbe = { probeError: probeWarning };
         } else {
-          const probeRes = await cdp.call(probeTab.webSocketDebuggerUrl, 'Runtime.evaluate', {
-            expression: buildDocumentDeliveryProbe(fingerprintForNativeKernelInject(targetFp)),
-            returnByValue: true,
-            awaitPromise: true,
-          }, timeout);
-          const exception = probeRes?.exceptionDetails || probeRes?.result?.exceptionDetails;
-          liveProbe = exception ? { probeError: exception.text || 'Probe script failed' }
-            : (probeRes?.result?.value ?? probeRes?.value ?? null);
+          const injectFp = fingerprintForNativeKernelInject(targetFp);
+          const expression = buildDocumentDeliveryProbe(injectFp);
+          const readProbe = async () => {
+            const response = await cdp.call(probeTab.webSocketDebuggerUrl, 'Runtime.evaluate', {
+              expression, returnByValue: true, awaitPromise: true,
+            }, timeout);
+            const exception = response?.exceptionDetails || response?.result?.exceptionDetails;
+            return exception ? { probeError: exception.text || 'Probe script failed' }
+              : (response?.result?.value ?? response?.value ?? null);
+          };
+          liveProbe = await readProbe();
+          if (liveProbe?.installationMissing && liveProbe.blankDocument && isEphemeralDocumentUrl(probeTab.url)
+              && !item.stopping && !item.cleanedUp) {
+            const hash = fingerprintConfigHash(injectFp);
+            const registered = [...item.fingerprintSessionStates?.values() || []].some(state =>
+              state.targetId === probeTab.id && state.ready && state.fingerprintHash === hash
+              && isActiveFingerprintSession(item, state));
+            if (registered) {
+              // The initial blank realm can change as CDP takes ownership.
+              // Let the persistent registration run in a fresh local document.
+              await fpLog('verify.delivery-retry-blank-document', { profileId, targetId: probeTab.id });
+              await navigateStartupDocument(probeTab, 'about:blank', { timeout });
+              liveProbe = await readProbe();
+            }
+          }
         }
       } catch (err) {
         probeWarning = "CDP 探针执行异常: " + (err?.message || String(err));

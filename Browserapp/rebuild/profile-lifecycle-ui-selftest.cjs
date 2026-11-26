@@ -23,6 +23,8 @@ async function main() {
     await page.waitForFunction(() => !!globalThis.__localRequest && !!globalThis.__router);
     await app.evaluate((_host, file) => {
       const { LocalService } = process.mainModule.require(file), original = LocalService.prototype.request;
+      const cdp = process.mainModule.require('./cdp');
+      const { buildDocumentDeliveryProbe } = process.mainModule.require('./automation/fingerprint/delivery-probe');
       const gates = new Map();
       globalThis.lifecycleTest = { gates, trace: [], failIp: false,
         hold(name) { let resolve;const promise = new Promise(done => { resolve = done; });gates.set(name, { promise, resolve, entered: false }); },
@@ -44,6 +46,21 @@ async function main() {
           };
           const apply = engine.applyRuntimeSettings, retain = engine.enforceDataRetention, drain = engine.drainProfileHelpers;
           engine.applyRuntimeSettings = async function(...args) { await test.wait('inject');return apply.apply(this, args); };
+          const verify = engine.verifyStartupFingerprintDelivery;
+          engine.verifyStartupFingerprintDelivery = async function(item, profile, fingerprint) {
+            if (!test.replaceInitialRealm) return verify.call(this, item, profile, fingerprint);
+            const tab = (await cdp.tabs(item.port)).find(candidate => candidate.url === 'about:blank');
+            if (!tab) throw Error('Missing initial blank page for startup recovery test');
+            const evaluate = expression => cdp.call(tab.webSocketDebuggerUrl, 'Runtime.evaluate', { expression, returnByValue: true });
+            // Remove the marker only in the current realm. Document-start registration remains active.
+            await evaluate('Function.prototype.toString = () => ""');
+            const marker = await evaluate(buildDocumentDeliveryProbe(fingerprint, { paused: true }));
+            if (!marker.result?.value?.installationMissing || !marker.result.value.blankDocument)
+              throw Error('Startup recovery test did not invalidate the initial blank page marker');
+            const result = await verify.call(this, item, profile, fingerprint);
+            test.recoveredInitialRealm = result.ok && result.liveProbe?.href === 'about:blank';
+            return result;
+          };
           engine.enforceDataRetention = async function(...args) {
             if (engine.stopping.size || [...engine.running.values()].some(item => item.stopping)) await test.wait('close');
             return retain.apply(this, args);
@@ -95,9 +112,14 @@ async function main() {
     await row().getByRole('button', { name: '打开窗口', exact: true }).click();
     await waitUntil(() => app.evaluate((_host, id) => globalThis.lifecycleTest.engine.status().find(row => row.id === id)?.lifecycle?.error, profile.id));
     await waitUntil(() => row().getByRole('button', { name: '打开窗口', exact: true }).isEnabled());await shot('probe-failed');
-    await app.evaluate(() => { globalThis.lifecycleTest.failIp = false;globalThis.lifecycleTest.hold('native-close'); });
+    await app.evaluate(() => {
+      globalThis.lifecycleTest.failIp = false;
+      globalThis.lifecycleTest.replaceInitialRealm = true;
+      globalThis.lifecycleTest.hold('native-close');
+    });
     await row().getByRole('button', { name: '打开窗口', exact: true }).click();
     await row().getByRole('button', { name: '查看', exact: true }).waitFor({ timeout: 60000 });
+    assert.equal(await app.evaluate(() => globalThis.lifecycleTest.recoveredInitialRealm), true);
     await app.evaluate(async (_host, id) => {
       globalThis.lifecycleTest.nativeClosing = true;
       await globalThis.lifecycleTest.engine.running.get(id).cdpConnection.command('Browser.close', {}, { timeout: 5000 }).catch(() => {});
