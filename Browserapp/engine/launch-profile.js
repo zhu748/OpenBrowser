@@ -1,7 +1,7 @@
 "use strict";
 
 // Revision-checked launch publication and persistent identity migration, shared by both engines.
-const crypto = require("node:crypto");
+const { createFingerprintSeed } = require("../automation/fingerprint/generation");
 const { profileWriteGuard } = require("./profile-write-guard");
 
 async function readKernelVersion(engine, browser) {
@@ -45,7 +45,7 @@ async function ensureLegacyFingerprintSeed(engine, profile) {
     profile.fingerprintSeed = seed;
     return false;
   }
-  const chosen = seed || crypto.randomBytes(16).toString("hex");
+  const chosen = seed || createFingerprintSeed();
   profile.fingerprintSeed = chosen;
   if (existing?.seed === chosen && existing.status === "pending") {
     await existing.promise;

@@ -15,6 +15,7 @@ const documentSnapshot = `((hints, networkFields) => {
     href: String(location.href || ''),
     userAgent: navigator.userAgent, platform: navigator.platform,
     language: navigator.language, languages: Array.from(navigator.languages || []),
+    doNotTrack: navigator.doNotTrack ?? null,
     hardwareConcurrency: navigator.hardwareConcurrency, deviceMemory: navigator.deviceMemory,
     deviceMemoryPresent: 'deviceMemory' in navigator, secureContext: globalThis.isSecureContext === true,
     vendor: navigator.vendor, screenWidth: screen.width, screenHeight: screen.height,
@@ -35,9 +36,20 @@ const LIVE_PROBE_EXPRESSION = `(async () => {
   try {
     const hints = navigator.userAgentData;
     const snapshot = ${documentSnapshot};
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl') || canvas.getContext('webgl2');
-    const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+    const readWebgl = (type) => {
+      const canvas = document.createElement('canvas');
+      const gl = canvas.getContext(type) || (type === 'webgl' ? canvas.getContext('experimental-webgl') : null);
+      const ext = gl?.getExtension('WEBGL_debug_renderer_info');
+      return {
+        webglContextPresent: Boolean(gl), webglUnmasked: Boolean(ext),
+        webglVendor: gl ? gl.getParameter(ext ? ext.UNMASKED_VENDOR_WEBGL : gl.VENDOR) : null,
+        webglRenderer: gl ? gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) : null,
+      };
+    };
+    // A canvas can create only one context type. Probe both API versions on
+    // separate canvases, including WebGL2 when WebGL1 is available.
+    const webgl = readWebgl('webgl');
+    const webgl2 = readWebgl('webgl2');
     let uaDataHighEntropy = null, uaDataError = null, entropyTimer;
     if (snapshot.uaDataPresent && snapshot.secureContext) {
       try {
@@ -50,10 +62,8 @@ const LIVE_PROBE_EXPRESSION = `(async () => {
     }
     return {
       ...snapshot,
-      webglContextPresent: Boolean(gl),
-      webglUnmasked: Boolean(ext),
-      webglVendor: gl ? gl.getParameter(ext ? ext.UNMASKED_VENDOR_WEBGL : gl.VENDOR) : null,
-      webglRenderer: gl ? gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) : null,
+      ...(webgl.webglContextPresent ? webgl : webgl2),
+      webglContexts: { webgl, webgl2 },
       uaDataHighEntropy, uaDataError,
     };
   } catch (error) {

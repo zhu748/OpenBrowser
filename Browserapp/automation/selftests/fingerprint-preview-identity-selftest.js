@@ -7,6 +7,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { BrowserEngine } = require('../../engine');
 const { LocalService } = require('../../rebuild/local-service');
+const { ProfileRoutes } = require('../api/profile-routes');
 const { fromRoxy } = require('../../rebuild/profile-dto');
 const { buildFirefoxFingerprint } = require('../firefox-fingerprint');
 const { fontsForOs } = require('../fingerprint/shared');
@@ -30,6 +31,9 @@ async function main() {
       ? (profile.engineVersion === '158' ? '158.0' : '159.0')
       : (chromiumVersions[profile.engineVersion] || '159.0.8154.6') });
     const service = new LocalService({ engine, root, dialog: {}, window: () => null });
+    const routes = new ProfileRoutes({ engine });
+    const noPreview = await service.request('profiles:create', { windowName: 'Create without preview' });
+    assert.match(engine.profiles.get(noPreview.id).fingerprintSeed, /^[a-f0-9]{32}$/);
     for (const coreType of ['Chrome', 'Firefox']) {
       const selected = { os: 'Windows', osVersion: 'Windows 11', coreType, coreVersion: '159' };
       const [compact] = await service.request('fingerprint:preview', { ...selected, includeRuntime: false });
@@ -52,6 +56,26 @@ async function main() {
       const row = await service.request('profiles:create', payload);
       assert.equal(row.id, preview._fingerprintDraft.profileId);
       assert.deepEqual(identity(engine.fingerprintFor(row.id)), identity(preview._openbrowser), 'create keeps every derived noise value');
+      const chooseBrowser = engine.chooseBrowser;
+      const readInstalledVersion = engine.kernelManager.readInstalledVersion;
+      try {
+        engine.chooseBrowser = () => ({ version: '159', engine: coreType === 'Firefox' ? 'firefox' : 'chromium' });
+        engine.kernelManager.readInstalledVersion = async () => preview._openbrowser.kernelVersion;
+        const reply = await routes.routeFingerprint({ input: { profile_id: row.id } });
+        assert.equal(reply.code, 0);
+        const inspected = reply.data;
+        assert.equal(inspected.delivery, 'configured');
+        assert.equal(inspected.kernelVersion, preview._openbrowser.kernelVersion);
+        assert.equal(inspected.userAgent, preview.userAgent);
+        const item = { fingerprint: inspected, engine: inspected.engine, fingerprintVerified: true,
+          capabilities: { fingerprintDelivery: true } };
+        engine.running.set(row.id, item);
+        assert.equal((await engine.inspectFingerprint(row.id)).delivery, 'verified-document');
+      } finally {
+        engine.running.delete(row.id);
+        engine.chooseBrowser = chooseBrowser;
+        engine.kernelManager.readInstalledVersion = readInstalledVersion;
+      }
       const before = engine.profileForEdit(row.id);
       const replay = await service.request('profiles:create', payload);
       assert.notEqual(replay.id, row.id, 'template/double-submit cannot overwrite the first window');

@@ -96,6 +96,47 @@ function reportStartupNavigationError(engine, profileId, error, lifecycleGenerat
     lifecycleGeneration, message: `启动网址加载失败：${error}` });
 }
 
+async function navigateStartupDocument(tab, url, { onNavigationError, timeout = 15000 } = {}) {
+  if (!tab?.webSocketDebuggerUrl) throw new Error('启动标签页调试连接不可用');
+  const ready = Promise.withResolvers();
+  ready.promise.catch(() => {});
+  const completed = new Set();
+  let navigating = false, target, timer;
+  const connection = await cdp.connect(tab.webSocketDebuggerUrl, {
+    onEvent(event) {
+      if (!navigating || event.method !== 'Page.lifecycleEvent') return;
+      const { frameId, loaderId, name } = event.params || {};
+      if (name !== 'DOMContentLoaded' || !frameId || !loaderId) return;
+      const key = `${frameId}:${loaderId}`;
+      if (target === key) ready.resolve();
+      // The event can arrive before the Page.navigate response supplies its IDs.
+      else if (!target && completed.size < 256) completed.add(key);
+    },
+    onDisconnect: ready.reject,
+  });
+  try {
+    await connection.command('Page.enable');
+    await connection.command('Page.setLifecycleEventsEnabled', { enabled: true });
+    navigating = true;
+    timer = setTimeout(() => ready.reject(new Error('启动页面等待 DOMContentLoaded 超时')), timeout);
+    const result = await connection.command('Page.navigate', { url }, { timeout });
+    if (result.errorText) {
+      if (!onNavigationError) throw new Error(result.errorText);
+      onNavigationError(result.errorText);
+      return;
+    }
+    if (!result.frameId) throw new Error('启动导航缺少页面标识');
+    // Same-document navigations and downloads do not create a new document.
+    if (!result.loaderId || result.isDownload) return;
+    target = `${result.frameId}:${result.loaderId}`;
+    if (completed.has(target)) ready.resolve();
+    await ready.promise;
+  } finally {
+    clearTimeout(timer);
+    connection.close();
+  }
+}
+
 async function openVerifiedStartupTabs(engine, item, urls) {
   const targets = [...new Set(urls.map(startupNavigationUrl).filter(Boolean))];
   if (!targets.length) return;
@@ -110,10 +151,10 @@ async function openVerifiedStartupTabs(engine, item, urls) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     const tab = (await cdp.tabs(item.port)).find((value) => value.id === target.targetId);
-    if (!tab?.webSocketDebuggerUrl) throw new Error('新启动标签页已关闭');
-    const navigation = await cdp.call(tab.webSocketDebuggerUrl, 'Page.navigate', { url });
-    if (navigation?.errorText) warn(navigation.errorText);
+    if (!tab) throw new Error('新启动标签页已关闭');
+    await navigateStartupDocument(tab, url, { onNavigationError: warn });
   }
 }
 
-module.exports = { sessionUrls, startupNavigationUrl, readDeferredSessionUrls, preserveLegacySession, saveDeferredSession, openVerifiedStartupTabs, reportStartupNavigationError  };
+module.exports = { sessionUrls, startupNavigationUrl, readDeferredSessionUrls, preserveLegacySession,
+  saveDeferredSession, navigateStartupDocument, openVerifiedStartupTabs, reportStartupNavigationError };

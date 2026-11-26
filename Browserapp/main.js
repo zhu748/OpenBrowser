@@ -1253,7 +1253,7 @@ app.whenReady().then(async () => {
     if (!automation?.localApi) throw new Error('Local API is not ready');
     return automation.localApi.route('GET', '/api/getVersion', {});
   });
-  registerTrustedIpc('automation:fingerprint', (_event, id) => engine.fingerprintFor(String(id || '')));
+  registerTrustedIpc('automation:fingerprint', (_event, id) => engine.inspectFingerprint(String(id || '')));
   registerTrustedIpc('automation:isolation-audit', () => engine.isolationAudit());
   registerTrustedIpc('automation:build-ua', (_event, payload = {}) => require('./automation/editor-ua').buildEditorUa(engine, payload));
 

@@ -224,7 +224,10 @@ function buildFingerprint(profile = {}, { timezone: timezoneDynamic = resolvePro
       ...webglPreset,
       vendor: version >= 2 && mobileRequested === 'ios' ? 'Apple Inc.' : `Google Inc. (${mobileDevice.gpu.vendor})`,
       renderer: version >= 2 && mobileRequested === 'ios' ? 'Apple GPU' : mobileAngleRenderer(mobileDevice),
-      gpu: mobileDevice.gpu.family ? { vendor: mobileDevice.gpu.family, architecture: mobileGpuArch(mobileDevice.gpu.family) } : webglPreset.gpu,
+      gpu: mobileDevice.gpu.family ? {
+        vendor: mobileDevice.gpu.family,
+        architecture: mobileDevice.gpu.architecture || mobileGpuArch(mobileDevice.gpu.family),
+      } : webglPreset.gpu,
     };
     // A pinned UA still wins, but the rest of the phone identity follows the sampled device.
     if (!uaOverrideStr) uaProfile = mobileDevice.uaProfile;

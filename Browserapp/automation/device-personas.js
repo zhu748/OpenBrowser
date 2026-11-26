@@ -3,6 +3,7 @@
 const crypto = require("crypto");
 const desktopCatalog = require('./data/desktop-personas-v3.json');
 const desktopAdditions = require('./data/desktop-personas-v4.json');
+const desktopExpansion = require('./data/desktop-personas-v5.json');
 const { osChromeSupportViolation } = require('./user-agent');
 
 function desktopPersonasByOs(devices) {
@@ -28,8 +29,12 @@ function desktopPersonasByOs(devices) {
   }
   return byOs;
 }
-const DESKTOP_V3 = desktopPersonasByOs(desktopCatalog.devices);
-const DESKTOP_V4 = desktopPersonasByOs([...desktopCatalog.devices, ...desktopAdditions.devices]);
+const desktopV4 = [...desktopCatalog.devices, ...desktopAdditions.devices];
+const desktopPools = new Map([
+  [3, desktopPersonasByOs(desktopCatalog.devices)],
+  [4, desktopPersonasByOs(desktopV4)],
+  [5, desktopPersonasByOs([...desktopV4, ...desktopExpansion.devices])],
+]);
 
 /**
  * Coherent device personas.
@@ -577,8 +582,7 @@ function resolveCompatiblePersona(persona, hostPlatform = process.platform) {
 function pickPersona(os, index, options) {
   const n = Number.isFinite(Number(index)) ? Math.abs(Math.trunc(Number(index))) : 0;
   let pool;
-  const curated = options?.fingerprintVersion >= 3
-    && (options.fingerprintVersion >= 4 ? DESKTOP_V4 : DESKTOP_V3).get(os);
+  const curated = desktopPools.get(Number(options?.fingerprintVersion))?.get(os);
   if (curated) {
     const macMajor = os.startsWith('macos') ? Number(String(options.osVersion || '').match(/\d+/)?.[0]) : 0;
     const candidate = curated[n % curated.length];

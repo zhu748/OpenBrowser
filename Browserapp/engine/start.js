@@ -633,6 +633,7 @@ module.exports = {
             throw reInjectError;
           }
         }
+        item.fingerprintVerified = true;
       }
       // Brand window title as 环境 N (not generic Chrome)
       await this.applyEnvWindowTitle(item.port, profile).catch(() => {});

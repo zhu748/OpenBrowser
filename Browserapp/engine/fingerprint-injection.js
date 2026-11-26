@@ -10,6 +10,7 @@
  */
 
 const cdp = require('../cdp');
+const { setTimeout: delay } = require('node:timers/promises');
 const { createCssFontResponseRewriter } = require('../automation/css-font-response-rewrite');
 const { ImageSizeFilter } = require('../automation/image-size-filter');
 const { applyFingerprintToTab, buildFingerprint, buildWorkerInjectionScript, forgetFingerprintOwner, forgetFingerprintTarget } = require('../automation/fingerprint');
@@ -29,6 +30,8 @@ const { closePageFingerprintConnection } = require('./fingerprint-transport');
 const { FingerprintSession } = require('./fingerprint-session');
 const { applyNetworkConditions, applyNavigationNetworkConditions } = require('./network-conditions');
 const { hostScreenSummary } = require('./launch-display');
+const { readKernelVersion } = require('./launch-profile');
+const { profileWriteGuard } = require('./profile-write-guard');
 
 // Stable identity of the document-start config. Two inject payloads built from the same
 // fingerprint serialise identically, so this is what decides whether a live tab still matches
@@ -225,11 +228,16 @@ module.exports = {
       try {
         const exists = await targetStillExists(connection, state.targetId);
         if (obsolete() || exists === false) return;
-        // A closing worker can still be in a snapshot generated before its
-        // targetDestroyed event. A second ordered round trip lets that event
-        // invalidate even a stale reply; no timer or permanent tombstones.
+        // Renderer teardown can send the detach before the browser removes
+        // the target from discovery, even across consecutive snapshots.
         const confirmed = await targetStillExists(connection, state.targetId);
         if (obsolete() || confirmed === false) return;
+        if (workerTypes.has(state.targetType)) {
+          await delay(250);
+          if (obsolete()) return;
+          const remaining = await targetStillExists(connection, state.targetId);
+          if (obsolete() || remaining === false) return;
+        }
         await this.handleBrowserGone(item.profile.id, item, 'fingerprint-session-detached', {
           expected: false, error: 'A live target lost its verified fingerprint session', kill: true, waitForExit: true,
         });
@@ -383,7 +391,7 @@ module.exports = {
         }
         if (detachedTargetId) forgetTargetRuntimePolicy(item, detachedTargetId, connection, detachedSessionId);
         if (detachedState?.ready) {
-          confirmLostReadySession(detachedState, connection).catch((error) => report(error, { targetId: detachedTargetId }));
+          return confirmLostReadySession(detachedState, connection).catch((error) => report(error, { targetId: detachedTargetId }));
         }
         return;
       }
@@ -443,7 +451,7 @@ module.exports = {
       }
       if (targetId) workerSessionToTargetId.set(sessionId, targetId);
       const isInitial = Boolean(targetId && pendingInitialTargets.has(targetId));
-      const state = new FingerprintSession({ sessionId, targetId, item, connection });
+      const state = new FingerprintSession({ sessionId, targetId, targetType: targetInfo.type, item, connection });
       sessionStates.set(sessionId, state);
       const scopedConnection = { command: (method, params, options) => state.command(method, params, options) };
 
@@ -979,7 +987,8 @@ module.exports = {
       try {
         const tabs = await cdp.tabs(port).catch(() => []);
         // Probe initial blank tab or current start page tab
-        const probeTab = tabs.find((t) => /about:blank/i.test(String(t.url || '')) || this.isStartPageUrl(t.url)) || tabs[0];
+        const probeTab = tabs.find((t) => isEphemeralDocumentUrl(t.url))
+          || tabs.find((t) => this.isStartPageUrl(t.url)) || tabs[0];
         if (!probeTab?.webSocketDebuggerUrl) {
           probeWarning = '未找到可用于探针校验的初始标签页';
           liveProbe = { probeError: probeWarning };
@@ -1116,7 +1125,24 @@ module.exports = {
       this.deliveryVerificationFailureTimestamps?.clear();
     }
   },
-  fingerprintFor(profileOrId) {
+  async inspectFingerprint(profileId) {
+    const running = this.running.get(profileId);
+    if (running?.fingerprint && !running.stopping && !running.cleanedUp) {
+      const fingerprint = this.fingerprintFor(profileId);
+      const verified = (running.engine || fingerprint.engine) === 'firefox'
+        ? running.capabilities?.fingerprintDelivery : running.fingerprintVerified;
+      return { ...fingerprint, delivery: verified ? 'verified-document' : 'configured' };
+    }
+    const profile = this.profiles.get(profileId);
+    if (!profile) throw new Error('profile not found');
+    const assertCurrent = profileWriteGuard(this, profileId);
+    const family = this.profilePrefersFirefox(profile) ? 'firefox' : 'chromium';
+    const version = await readKernelVersion(this, this.chooseBrowser(profile, family));
+    assertCurrent();
+    const fingerprint = this.fingerprintFor(profileId, version);
+    return { ...fingerprint, delivery: fingerprint.delivery ?? 'configured' };
+  },
+  fingerprintFor(profileOrId, resolvedKernelVersion) {
     const profile = typeof profileOrId === 'string'
       ? (this.profiles.get(profileOrId) || this.running.get(profileOrId)?.profile)
       : profileOrId;
@@ -1132,10 +1158,10 @@ module.exports = {
     if (this.profilePrefersFirefox?.(profile)) {
       const fingerprint = require('../automation/firefox-fingerprint').buildFirefoxFingerprint({
         ...profile, hostScreen: profile.hostScreen ?? hostScreenSummary(),
-      }, this.chooseBrowser(profile, 'firefox').version);
+      }, resolvedKernelVersion ?? this.chooseBrowser(profile, 'firefox').version);
       return { ...fingerprint, delivery: 'configured' };
     }
-    const kernelVersion = profile.kernelVersion || this.chooseBrowser(profile, 'chromium').version;
+    const kernelVersion = resolvedKernelVersion ?? (profile.kernelVersion || this.chooseBrowser(profile, 'chromium').version);
     return buildFingerprint({ ...profile, kernelVersion, hostScreen: profile.hostScreen ?? hostScreenSummary() });
   },
 

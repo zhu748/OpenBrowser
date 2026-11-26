@@ -4,13 +4,18 @@ const crypto = require('node:crypto');
 const { u32 } = require('../fingerprint-generators');
 const { CURRENT_FINGERPRINT_VERSION } = require('../../shared/profile-values');
 
+function createFingerprintSeed() {
+  return crypto.randomBytes(16).toString('hex');
+}
+
 // Missing versions belong to persisted legacy profiles, including old backups.
 function fingerprintVersion(value) {
   if (value === undefined || value === null || value === '') return 1;
-  if (![1, 2, 3, 4, '1', '2', '3', '4'].includes(value)) {
+  const version = typeof value === 'string' && /^[1-9]\d*$/.test(value) ? Number(value) : value;
+  if (!Number.isInteger(version) || version < 1 || version > CURRENT_FINGERPRINT_VERSION) {
     throw new Error('Unsupported fingerprintVersion: ' + String(value));
   }
-  return Number(value);
+  return version;
 }
 
 function createFingerprintDraw(seed, version) {
@@ -28,4 +33,4 @@ function createFingerprintDraw(seed, version) {
   };
 }
 
-module.exports = { CURRENT_FINGERPRINT_VERSION, fingerprintVersion, createFingerprintDraw };
+module.exports = { CURRENT_FINGERPRINT_VERSION, fingerprintVersion, createFingerprintDraw, createFingerprintSeed };

@@ -14,7 +14,7 @@ const { buildUaProfile, cdpUserAgentOverride, buildAcceptLanguageHeader } = requ
 const { compileUrlAccessPolicy, blockedPageHtml } = require('./url-access-policy');
 const { NETWORK_INFO_FIELDS } = require('./fingerprint/delivery-probe');
 const OPTIONAL_NETWORK_INFO_FIELDS = new Set(['type', 'downlinkMax']);
-const { normalizeNetworkInformation } = require('../shared/profile-values');
+const { normalizeNetworkInformation, resolveDoNotTrackMode } = require('../shared/profile-values');
 
 const CHROMIUM_CANONICAL_HEADER_ORDER = Object.freeze([
   "host",
@@ -626,13 +626,15 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   const checkWebglMetadata = options.strict
     ? !['real', 'off'].includes(webglMetaMode)
     : !['real', 'off'].includes(webglMode) && !['real', 'off'].includes(webglMetaMode);
+  const webglContexts = options.strict && liveProbe.webglContexts
+    ? Object.entries(liveProbe.webglContexts).filter(([, context]) => context.webglContextPresent) : [];
 
   if (options.strict && webglMode === 'blocked') {
-    if (liveProbe.webglContextPresent === true) mismatches.push({
+    if (liveProbe.webglContextPresent === true || webglContexts.length) mismatches.push({
       field: 'webglContext', expected: false, actual: true, message: '配置已禁用 WebGL，但页面仍可创建上下文',
     });
   } else if (options.strict && webglMetaMode === 'blocked') {
-    if (liveProbe.webglUnmasked === true) mismatches.push({
+    if (liveProbe.webglUnmasked === true || webglContexts.some(([, context]) => context.webglUnmasked === true)) mismatches.push({
       field: 'webglUnmasked', expected: false, actual: true, message: '配置已隐藏 WebGL 调试信息，但页面仍可读取',
     });
   } else if (checkWebglMetadata) {
@@ -668,6 +670,21 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
         }
       }
     }
+    if (webglContexts.length > 1) {
+      const expectedRenderer = String(fingerprint.webgl?.renderer || profile.webglRenderer || '').trim();
+      const expectedVendor = String(fingerprint.webgl?.vendor || profile.webglVendor || '').trim();
+      for (const [type, context] of webglContexts.slice(1)) {
+        if (!context.webglUnmasked) {
+          warnings.push(`${type} 调试扩展不可用，无法验证厂商和渲染器`);
+          continue;
+        }
+        for (const [key, expected] of [['webglRenderer', expectedRenderer], ['webglVendor', expectedVendor]]) {
+          if (expected && context[key] !== expected) mismatches.push({
+            field: `${type}.${key}`, expected, actual: context[key], message: `${type} ${key} 未按配置交付`,
+          });
+        }
+      }
+    }
   }
 
   // 7. Languages (first language)
@@ -679,7 +696,7 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   const isSystemLanguage = explicitLangMode === 'system' || explicitLangMode === 'real'
     || profileLangField === 'system' || profileLangField === 'real';
 
-  if (!isSystemLanguage) {
+  if (options.strict || !isSystemLanguage) {
     const expectedLang = extractPrimaryLanguage(fingerprint?.languages || profile?.language);
     const liveLang = extractPrimaryLanguage(liveProbe.languages || liveProbe.language);
 
@@ -731,6 +748,13 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
   }
 
   if (options.strict) {
+    // Firefox and Chromium return different inactive values for this native preference.
+    const configuredDnt = resolveDoNotTrackMode(privacy);
+    const dntEnabled = fingerprint.doNotTrack === '1' || configuredDnt === 'on';
+    if ((dntEnabled || configuredDnt === 'off') && (liveProbe.doNotTrack === '1') !== dntEnabled) {
+      mismatches.push({ field: 'doNotTrack', expected: dntEnabled ? '1' : null, actual: liveProbe.doNotTrack,
+        message: 'navigator.doNotTrack 未按配置交付' });
+    }
     if (liveProbe.webdriver === true) {
       mismatches.push({ field: 'webdriver', expected: false, actual: true, message: 'navigator.webdriver 未按配置交付' });
     }
@@ -754,7 +778,7 @@ function evaluateFingerprintDelivery(profile = {}, fingerprint = {}, liveProbe =
           message: `navigator.connection.${key} 未按配置交付` });
       }
     }
-    if (!isSystemLanguage && Array.isArray(fingerprint.languages) && fingerprint.languages.length) {
+    if (Array.isArray(fingerprint.languages) && fingerprint.languages.length) {
       const primary = extractPrimaryLanguage(fingerprint.languages);
       if (Object.hasOwn(liveProbe, 'language') && extractPrimaryLanguage(liveProbe.language) !== primary) {
         mismatches.push({ field: 'language', expected: primary, actual: liveProbe.language, message: 'navigator.language 未按配置交付' });

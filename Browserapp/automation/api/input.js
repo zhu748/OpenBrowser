@@ -1,7 +1,18 @@
 'use strict';
 
 // External API aliases and field adaptation; no transport or engine state.
-const { normalizeCoordinates, resolveDoNotTrackMode } = require('../../shared/profile-values');
+const { normalizeCoordinates, resolveDoNotTrackMode, toFiniteNumber } = require('../../shared/profile-values');
+
+const FINGERPRINT_OBJECT_FIELDS = ['clientHints', 'network', 'battery', 'webgpu', 'mediaLabels', 'canvas', 'webgl', 'audio'];
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+
+function mergeFingerprintOverrides(previous, patch) {
+  const merged = { ...previous, ...patch };
+  for (const key of FINGERPRINT_OBJECT_FIELDS) {
+    if (isObject(previous?.[key]) && isObject(patch?.[key])) merged[key] = { ...previous[key], ...patch[key] };
+  }
+  return merged;
+}
 
 function booleanValue(value, fallback = false) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -59,19 +70,13 @@ function parseGeolocation(value) {
 
 function normalizeProfileInput(input = {}) {
   const out = { ...input };
-  const privacy = { ...(out.privacy && typeof out.privacy === 'object' ? out.privacy : {}) };
-  const hasTopLevelFingerprint = Object.prototype.hasOwnProperty.call(out, 'fingerprint');
-  const hasPrivacyFingerprint = Object.prototype.hasOwnProperty.call(privacy, 'fingerprint');
-  const legacyFingerprintKeys = [
-    'webgl_vendor', 'webglVendor', 'webgl_renderer', 'webglRenderer',
-    'hardware_concurrency', 'hardwareConcurrency', 'device_memory', 'deviceMemory',
-  ];
-  const hasLegacyFingerprint = legacyFingerprintKeys.some((key) => Object.prototype.hasOwnProperty.call(out, key));
-  const hasFingerprintInput = hasTopLevelFingerprint || hasPrivacyFingerprint || hasLegacyFingerprint;
-  let fingerprint = out.fingerprint && typeof out.fingerprint === 'object'
+  const extra = out.privacy_extra ?? out.privacyExtra;
+  const privacy = { ...(isObject(out.privacy) ? out.privacy : {}), ...(isObject(extra) ? extra : {}) };
+  let fingerprint = isObject(out.fingerprint)
     ? { ...out.fingerprint }
-    : (privacy.fingerprint && typeof privacy.fingerprint === 'object' ? { ...privacy.fingerprint } : null);
-  const clearFingerprint = out.fingerprint === null || out.privacy?.fingerprint === null;
+    : (isObject(privacy.fingerprint) ? { ...privacy.fingerprint } : null);
+  const clearFingerprint = Boolean(out.__clearFingerprint) || out.fingerprint === null
+    || out.privacy?.fingerprint === null || privacy.fingerprint === null;
 
   if (out.profile_id === undefined && out.profileId !== undefined) out.profile_id = out.profileId;
   if (out.user_id === undefined && out.userId !== undefined) out.user_id = out.userId;
@@ -91,7 +96,6 @@ function normalizeProfileInput(input = {}) {
     if (Number.isFinite(height)) out.height = height;
   }
   if (out.notes !== undefined) out.note = out.notes;
-  if (out.privacy_extra && typeof out.privacy_extra === 'object') Object.assign(privacy, out.privacy_extra);
 
   if (out.timezone !== undefined && String(out.timezone).trim()) {
     privacy.timezone = String(out.timezone).trim();
@@ -123,22 +127,18 @@ function normalizeProfileInput(input = {}) {
     privacy.webglMeta = 'custom';
   }
   const hardwareConcurrency = firstDefined(out, ['hardware_concurrency', 'hardwareConcurrency']);
-  if (hardwareConcurrency !== undefined) {
-    const n = Number(hardwareConcurrency);
-    if (Number.isFinite(n)) {
-      fingerprint = fingerprint || {};
-      privacy.cores = n;
-      fingerprint.hardwareConcurrency = n;
-    }
+  const cores = toFiniteNumber(hardwareConcurrency);
+  if (cores !== null) {
+    fingerprint = fingerprint || {};
+    privacy.cores = cores;
+    fingerprint.hardwareConcurrency = cores;
   }
   const deviceMemory = firstDefined(out, ['device_memory', 'deviceMemory']);
-  if (deviceMemory !== undefined) {
-    const n = Number(deviceMemory);
-    if (Number.isFinite(n)) {
-      fingerprint = fingerprint || {};
-      privacy.memory = n;
-      fingerprint.deviceMemory = n;
-    }
+  const memory = toFiniteNumber(deviceMemory);
+  if (memory !== null) {
+    fingerprint = fingerprint || {};
+    privacy.memory = memory;
+    fingerprint.deviceMemory = memory;
   }
   const doNotTrack = firstDefined(out, ['do_not_track', 'doNotTrack']);
   if (doNotTrack !== undefined) {
@@ -147,18 +147,12 @@ function normalizeProfileInput(input = {}) {
     privacy.dntMode = enabled ? 'on' : 'off';
   }
 
-  if (clearFingerprint) {
-    fingerprint = null;
-    delete privacy.fingerprint;
-  }
-  if (hasFingerprintInput && fingerprint) {
+  if (!clearFingerprint && fingerprint) {
     out.fingerprint = fingerprint;
     privacy.fingerprint = fingerprint;
-  } else if (clearFingerprint) {
-    delete out.fingerprint;
-    delete privacy.fingerprint;
   } else {
     delete out.fingerprint;
+    delete privacy.fingerprint;
   }
   out.privacy = privacy;
   out.__clearFingerprint = clearFingerprint;
@@ -208,4 +202,4 @@ function readProxyAssociation(input = {}) {
   return { present: false, value: '' };
 }
 
-module.exports = { booleanValue, firstDefined, firstArray, firstString, normalizeProfileInput, normalizeProxyInput, normalizeRpaInput, readProxyAssociation  };
+module.exports = { booleanValue, firstDefined, firstArray, firstString, mergeFingerprintOverrides, normalizeProfileInput, normalizeProxyInput, normalizeRpaInput, readProxyAssociation };

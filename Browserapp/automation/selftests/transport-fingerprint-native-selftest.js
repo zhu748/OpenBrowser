@@ -12,6 +12,8 @@ const path = require('node:path');
 const tls = require('node:tls');
 const cdp = require('../../cdp');
 const { BrowserEngine } = require('../../engine');
+const { ProfileRoutes } = require('../api/profile-routes');
+const { CURRENT_FINGERPRINT_VERSION } = require('../fingerprint/generation');
 const { evaluateBidi } = require('../../network/bidi-connection');
 const { chooseChromiumBinary, Unavailable } = require('./native-gate-harness');
 
@@ -170,6 +172,7 @@ async function startWireOrigin(root) {
   });
   const raw = net.createServer(socket => tap(track(socket), secure.address().port, clientHelloByPort));
   let observed, failure;
+  const finishedDocuments = new Set();
   app.on('stream', (stream, headers, _flags, rawHeaders) => {
     if (headers[':path'] === '/worker.js') {
       stream.respond({ ':status': 200, 'content-type': 'application/javascript' });
@@ -182,13 +185,13 @@ async function startWireOrigin(root) {
         assert.equal(transport?.alpn, 'h2');
         assert.match(transport.tls, /^TLSv1\.[23]$/);
         observed = {
-          userAgent: headers['user-agent'], tls: transport.tls, alpn: transport.alpn,
+          userAgent: headers['user-agent'], doNotTrack: headers.dnt ?? null, tls: transport.tls, alpn: transport.alpn,
           ...readClientHello(transport.clientHello.bytes), ...readHttp2(transport.bytes, rawHeaders),
         };
       } catch (error) { failure = error; }
     }
     stream.respond({ ':status': 200, 'content-type': 'text/html' });
-    stream.end(`<!doctype html><title>Wire probe</title><script>
+    stream.write(`<!doctype html><title>Wire probe</title><script>
       window.transportWorkerResult = new Promise(resolve => {
         const worker = new Worker('/worker.js');
         worker.onmessage = event => { worker.terminate(); resolve(event.data); };
@@ -196,6 +199,15 @@ async function startWireOrigin(root) {
         setTimeout(() => { worker.terminate(); resolve({error:'worker timed out'}); }, 5000);
       });
     </script>`);
+    const documentPath = headers[':path'];
+    if (documentPath !== '/wire' && documentPath !== '/secondary') { stream.end(); return; }
+    // Keeping the response open delays DOMContentLoaded beyond the former
+    // fixed startup delay, even though the inline worker already started.
+    const timer = setTimeout(() => {
+      finishedDocuments.add(documentPath);
+      stream.end('<main>Wire probe ready</main>');
+    }, 750);
+    stream.once('close', () => clearTimeout(timer));
   });
   const servers = [app, secure, raw];
   const close = async () => {
@@ -209,7 +221,7 @@ async function startWireOrigin(root) {
         server.listen(0, '127.0.0.1', resolve);
       });
     }
-    return { port: raw.address().port, close, observation: () => {
+    return { port: raw.address().port, close, finishedDocuments, observation: () => {
       if (failure) throw failure;
       assert.ok(observed, 'the browser did not reach the local HTTP/2 origin');
       return observed;
@@ -333,17 +345,27 @@ async function run({ browser, engineName, onlineTarget, useConnect = false }) {
     engine.chooseBrowser = () => ({ path: browser.binary, version: browser.version, name: engineName, engine: engineName, independent: true });
     engine.ensureExitNetworkForLocale = async () => null;
     if (proxy) engine.prepareProfileProxyForStart = async profile => profile; // The report itself validates this route.
-    const status = await engine.start({
-      id, name: id, engine: engineName, os: 'Windows', fingerprintVersion: 2, fingerprintSeed: id,
+    const startUrls = origin ? `${target}\n${new URL('/secondary', target)}` : target;
+    const created = await new ProfileRoutes({ engine }).routeProfileCreate({ input: {
+      id, name: id, engine: engineName, os: 'Windows', fingerprintVersion: CURRENT_FINGERPRINT_VERSION,
       networkMode: proxy ? 'proxy' : 'direct', proxy: proxy || 'Direct',
-      privacy: { cores: 24, fontListMode: 'real', webrtc: 'disabled', noSandbox: process.env.OPENBROWSER_NATIVE_NO_SANDBOX === '1' },
-      advanced: { showInfoPage: false, startUrls: target, ignoreHttpsError: !onlineTarget },
-    }, { headless: true });
+      privacy: { cores: 24, fontListMode: 'real', webrtc: 'disabled', dntMode: useConnect ? 'off' : 'on',
+        noSandbox: process.env.OPENBROWSER_NATIVE_NO_SANDBOX === '1' },
+      advanced: { showInfoPage: false, startUrls, ignoreHttpsError: !onlineTarget },
+    } });
+    assert.equal(created.code, 0, created.msg);
+    assert.match(created.data.profile.fingerprintSeed, /^[a-f0-9]{32}$/);
+    const configured = await engine.inspectFingerprint(id);
+    const status = await engine.start(engine.profiles.get(id), { headless: true });
     assert.equal(status.running, true);
+    assert.equal(status.fingerprint.delivery, 'verified-document');
+    if (origin) assert.deepEqual(origin.finishedDocuments, new Set(['/wire', '/secondary']), 'startup waits for both document bodies');
     const item = engine.running.get(id);
+    assert.equal(item.fingerprint.seed, configured.seed, 'the first launch uses the identity stored during creation');
     const observation = onlineTarget ? await readOnlineReport(item, firefox, target) : origin.observation();
     if (!onlineTarget) {
       assert.equal(observation.userAgent, item.fingerprint.userAgent);
+      assert.equal(observation.doNotTrack, item.fingerprint.doNotTrack);
       assert.ok(observation.offeredAlpn.includes('h2'));
       assert.match(observation.ja3Hash, /^[a-f0-9]{32}$/);
       assert.match(observation.ja4, /^t(?:12|13)d\d{4}h2_[a-f0-9]{12}_[a-f0-9]{12}$/);

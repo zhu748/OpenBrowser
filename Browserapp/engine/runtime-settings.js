@@ -46,7 +46,8 @@ module.exports = {
         throw Object.assign(new Error('Fingerprint fallback has been superseded by auto-attach'), { code: 'FINGERPRINT_FALLBACK_RETIRED' });
       }
     }
-    if (phase === 'pre-startpage' && !tabs.length) throw new Error('No page target available for fingerprint delivery');
+    const startup = phase === 'pre-startpage' || phase === 'post-startpage';
+    if (startup && !tabs.length) throw new Error('No page target available for fingerprint delivery');
     const network = this.networkInfo.get(profile.id) || {};
     // merge IP-detected geo/tz into profile for fingerprint apply
     const enriched = {
@@ -177,6 +178,7 @@ module.exports = {
       logFile: fingerprintLogPath(),
     });
 
+    let verifiedTabs = 0;
     for (const tab of tabs) {
       const flat = sessionTargets.get(tab.id);
       if (!flat && hasAttachedOwner(tab.id)) continue;
@@ -243,6 +245,7 @@ module.exports = {
           confirmPageFingerprintConnection(policyOwner, tab.id, connection);
         }
         applied.add(tab.id);
+        verifiedTabs += 1;
       } catch (error) {
         const replaced = () => flat ? hasVerifiedReplacement(tab.id, flat.sessionId)
           : (error?.code === 'FINGERPRINT_FALLBACK_RETIRED' || hasAttachedOwner(tab.id));
@@ -267,6 +270,7 @@ module.exports = {
       }
       // Only verified targets enter the applied set.
     }
+    if (startup && !verifiedTabs) throw new Error('No startup page remained available for fingerprint verification');
     // Drop closed targets so Set does not grow forever
     pruneAppliedTargets();
     if (options.trackOn) {

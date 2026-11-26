@@ -47,7 +47,7 @@ function buildFirefoxFingerprint(profile, version) {
   fp.staticConfig.deviceMemory = null;
   fp.lazyFontPayload = false;
   fp.fontBlobBridge = null;
-  assertFingerprintConsistency(fp);
+  fp.consistency = assertFingerprintConsistency(fp);
   return fp;
 }
 

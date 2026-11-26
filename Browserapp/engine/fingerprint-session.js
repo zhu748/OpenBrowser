@@ -3,8 +3,8 @@
 // Cancel a setup operation as soon as its session loses ownership. Commands
 // already sent cannot be recalled, but their late results cannot continue setup.
 class FingerprintSession {
-  constructor({ sessionId, targetId, item, connection }) {
-    Object.assign(this, { sessionId, targetId, item, connection });
+  constructor({ sessionId, targetId, targetType, item, connection }) {
+    Object.assign(this, { sessionId, targetId, targetType, item, connection });
     this.ready = false;
     this.reason = null;
     this.cancelled = new Promise((_resolve, reject) => { this.rejectCancellation = reject; });

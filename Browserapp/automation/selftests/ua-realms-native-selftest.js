@@ -90,18 +90,23 @@ async function main() {
   let reference;
   try {
     for (const os of [null, 'Windows', 'macos_arm', 'Linux', 'Android', 'Windows full UA', 'Windows generated UA', 'Windows fallback UA']) {
+      const fingerprintVersion = os === 'Windows' || os === 'Android' ? 5 : CURRENT_FINGERPRINT_VERSION;
       const persona = h.buildPersona('ua-contract-' + (os || 'baseline').replaceAll(' ', '-'), {
-        os: os?.startsWith('Windows') ? 'Windows' : os || 'Windows', kernelVersion: browser.version, fingerprintVersion: CURRENT_FINGERPRINT_VERSION,
-        seed: os === 'Windows' ? 'catalog-v4-96' : undefined,
+        os: os?.startsWith('Windows') ? 'Windows' : os || 'Windows', kernelVersion: browser.version, fingerprintVersion,
+        seed: os === 'Windows' ? 'catalog-v5-30' : undefined,
       });
-      assert.equal(persona.fingerprint.generationVersion, CURRENT_FINGERPRINT_VERSION);
+      assert.equal(persona.fingerprint.generationVersion, fingerprintVersion);
       if (os === 'Linux') assert.equal(persona.fingerprint.userAgentMetadata.platformVersion, '');
-      if (os === 'Windows') assert.match(persona.fingerprint.webgl.renderer, /Radeon 8060S/);
+      if (os === 'Windows') {
+        assert.match(persona.fingerprint.webgl.renderer, /RTX 5080/);
+        assert.equal(persona.fingerprint.webgl.gpu.architecture, 'blackwell');
+      }
       if (os === 'Android') {
-        persona.profile.privacy.fingerprint.clientHints = { deviceModel: 'SM-F956U' };
+        persona.profile.privacy.fingerprint.clientHints = { deviceModel: 'SM-F966U' };
         persona.fingerprint = buildFingerprint({ ...persona.profile, kernelVersion: browser.version });
-        assert.equal(persona.fingerprint.clientHints.deviceModel, 'SM-F956U');
-        assert.match(persona.fingerprint.webgl.renderer, /Adreno.*750/);
+        assert.equal(persona.fingerprint.clientHints.deviceModel, 'SM-F966U');
+        assert.match(persona.fingerprint.webgl.renderer, /Adreno.*830/);
+        assert.equal(persona.fingerprint.webgl.gpu.architecture, 'adreno-800');
       }
       if (os === 'Windows full UA') {
         persona.profile.userAgent = buildUaProfile({ os: 'Windows', chromeMajor: Number(browser.version.split('.')[0]), chromeFull: browser.version, reduced: false }).userAgent;

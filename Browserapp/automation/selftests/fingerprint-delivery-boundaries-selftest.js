@@ -221,6 +221,19 @@ async function startupHarness(fault) {
     }
     assert.equal(evaluateFingerprintDelivery(profile, fp, { ...liveFor(), webglUnmasked: false, webglRenderer: 'WebKit WebGL', webglVendor: 'WebKit' }, { strict: true }).ok, true);
   });
+  await test('strict delivery verifies native DNT while accepting each engine’s inactive value', () => {
+    const enabled = { ...fp, doNotTrack: '1' };
+    const check = (expected, actual, dntMode = 'default') => evaluateFingerprintDelivery({
+      ...profile, privacy: { ...profile.privacy, dntMode },
+    }, expected, { ...liveFor(), doNotTrack: actual }, { strict: true });
+    assert.equal(check(enabled, '1').ok, true);
+    for (const inactive of [null, '0', 'unspecified', undefined]) {
+      assert.equal(check(fp, inactive, 'off').ok, true);
+      assert.ok(check(enabled, inactive).mismatches.some(({ field }) => field === 'doNotTrack'));
+    }
+    assert.ok(check(fp, '1', 'off').mismatches.some(({ field }) => field === 'doNotTrack'));
+    assert.equal(check(fp, '1').ok, true, 'default preserves the native browser’s policy');
+  });
   await test('strict probe checks configured blocking independently of WebGL pixel noise and raw profile settings', () => {
     const current = { ...fp, webgl: { ...fp.webgl, mode: 'blocked', metaMode: 'real' } };
     const verify = (expected, patch) => evaluateFingerprintDelivery(profile, expected, { ...liveFor(), ...patch }, { strict: true });
@@ -234,6 +247,18 @@ async function startupHarness(fault) {
     const unavailable = verify(retainNoise, { webglContextPresent: false, webglUnmasked: false, webglVendor: null, webglRenderer: null });
     assert.equal(unavailable.ok, true);
     assert.ok(unavailable.warnings.some(warning => warning.includes('WebGL')));
+  });
+  await test('strict WebGL verification checks both API versions', () => {
+    const webgl1 = { webglContextPresent: true, webglUnmasked: true, webglRenderer: fp.webgl.renderer, webglVendor: fp.webgl.vendor };
+    const webgl2 = { ...webgl1, webglRenderer: 'Different WebGL2 renderer' };
+    const check = (fingerprint, primary, secondary) => evaluateFingerprintDelivery(profile, fingerprint, {
+      ...liveFor(), ...primary, webglContexts: { webgl: primary, webgl2: secondary },
+    }, { strict: true });
+    assert.ok(check(fp, webgl1, webgl2).mismatches.some(({ field }) => field === 'webgl2.webglRenderer'));
+    const hidden = { ...fp, webgl: { ...fp.webgl, metaMode: 'blocked' } };
+    assert.ok(check(hidden, { ...webgl1, webglUnmasked: false }, webgl2).mismatches.some(({ field }) => field === 'webglUnmasked'));
+    const blocked = { ...fp, webgl: { ...fp.webgl, mode: 'blocked' } };
+    assert.ok(check(blocked, { webglContextPresent: false }, webgl2).mismatches.some(({ field }) => field === 'webglContext'));
   });
   await test('platform classification and timezone aliases avoid false delivery failures', () => {
     assert.equal(normalizePlatformFamily('Darwin'), 'macos');
@@ -286,6 +311,11 @@ async function startupHarness(fault) {
       await assert.rejects(run(), /核心数/);
       cdp.tabs = async () => [];
       await assert.rejects(run({ phase: 'pre-startpage' }), /No page target/);
+      await assert.rejects(run({ phase: 'post-startpage', verifyApplied: true }), /No page target/);
+      let reads = 0;
+      cdp.tabs = async () => ++reads === 1 ? [tab] : [];
+      live = null;
+      await assert.rejects(run({ phase: 'post-startpage', verifyApplied: true }), /No startup page remained/);
     } finally { Object.assign(cdp, saved); }
   });
   await test('the runtime watcher reuses its tab snapshot and retains newer attached targets', async () => {

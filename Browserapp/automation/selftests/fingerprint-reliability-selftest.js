@@ -9,7 +9,7 @@ const path = require('node:path');
 const os = require('node:os');
 const cdp = require('../../cdp');
 const startPage = require('../../engine/start-page');
-const { readDeferredSessionUrls, saveDeferredSession, preserveLegacySession, openVerifiedStartupTabs, startupNavigationUrl } = require('../../engine/startup-session');
+const { readDeferredSessionUrls, saveDeferredSession, preserveLegacySession, navigateStartupDocument, openVerifiedStartupTabs, startupNavigationUrl } = require('../../engine/startup-session');
 const { buildFingerprint, buildInjectionScript, applyFingerprintToTab } = require('../fingerprint');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 const { completeLaunchArguments } = require('../../engine/launch-arguments');
@@ -238,7 +238,7 @@ function documentScope() {
   });
   await test('additional startup URLs wait for their target injection', async () => {
     const previousTabs = cdp.tabs;
-    const previousCall = cdp.call;
+    const previousConnect = cdp.connect;
     const calls = [];
     const item = { port: 1234, fpAppliedTargets: new Set() };
     item.workerFingerprintConnection = { command: async () => {
@@ -246,14 +246,47 @@ function documentScope() {
       return { targetId: 'extra' };
     } };
     cdp.tabs = async () => [{ id: 'extra', webSocketDebuggerUrl: 'ws://127.0.0.1:1234/extra' }];
-    cdp.call = async (_url, _method, params) => { assert.ok(item.fpAppliedTargets.has('extra')); calls.push(params.url); return {}; };
+    cdp.connect = async () => ({ close() {}, async command(method, params) {
+      assert.ok(item.fpAppliedTargets.has('extra'));
+      if (method === 'Page.navigate') { calls.push(params.url); return { frameId: 'extra' }; }
+    } });
     try {
       await openVerifiedStartupTabs({ keepDefaultTab: async (_port, url) => { calls.push(url); } }, item, ['https://one.test', 'https://two.test']);
       assert.deepEqual(calls, ['https://one.test/', 'https://two.test/']);
-    } finally { cdp.tabs = previousTabs; cdp.call = previousCall; }
+    } finally { cdp.tabs = previousTabs; cdp.connect = previousConnect; }
+  });
+  await test('startup navigation verifies the new main-frame loader even if lifecycle events arrive before the command reply', async () => {
+    const previousConnect = cdp.connect;
+    const tab = { webSocketDebuggerUrl: 'ws://127.0.0.1:1234/startup' };
+    let observe, closed = 0, emitEarly = false;
+    const sent = Promise.withResolvers();
+    const lifecycle = (frameId, loaderId) => ({ method: 'Page.lifecycleEvent', params: { name: 'DOMContentLoaded', frameId, loaderId } });
+    cdp.connect = async (_url, { onEvent }) => ({ close() { closed += 1; }, async command(method) {
+      if (method !== 'Page.navigate') return {};
+      observe = onEvent;
+      observe(lifecycle('main', 'previous'));
+      observe(lifecycle('child', 'next'));
+      if (emitEarly) observe(lifecycle('main', 'next'));
+      sent.resolve();
+      return { frameId: 'main', loaderId: 'next' };
+    } });
+    try {
+      const navigation = navigateStartupDocument(tab, 'https://one.test/');
+      await sent.promise;
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(closed, 0, 'unrelated lifecycle events cannot complete startup');
+      observe(lifecycle('main', 'next'));
+      await navigation;
+      emitEarly = true;
+      await navigateStartupDocument(tab, 'https://one.test/');
+      assert.equal(closed, 2);
+      emitEarly = false;
+      await assert.rejects(navigateStartupDocument(tab, 'https://one.test/', { timeout: 10 }), /DOMContentLoaded/);
+      assert.equal(closed, 3);
+    } finally { cdp.connect = previousConnect; }
   });
   await test('startup website errors warn after verified navigation while CDP failures still reject', async () => {
-    const previous = { tabs: cdp.tabs, call: cdp.call, activateTab: cdp.activateTab };
+    const previous = { tabs: cdp.tabs, connect: cdp.connect, activateTab: cdp.activateTab };
     const { keepDefaultTab } = require('../../engine/start-page');
     const first = { id: 'first', url: 'about:blank', webSocketDebuggerUrl: 'ws://127.0.0.1:1234/first' };
     const extra = { id: 'extra', url: 'about:blank', webSocketDebuggerUrl: 'ws://127.0.0.1:1234/extra' };
@@ -264,9 +297,7 @@ function documentScope() {
     const engine = { keepDefaultTab, isStartPageUrl: () => false, emit: event => events.push(event) };
     cdp.tabs = async () => tabs;
     cdp.activateTab = async () => {};
-    cdp.call = async (_socket, method) => method === 'Page.navigate' ? { errorText: navResults.shift() } : {};
-    // The tab helper's 400 ms settling timer is unref'ed in production.
-    const keepAlive = setTimeout(() => {}, 2000);
+    cdp.connect = async () => ({ close() {}, command: async (method) => method === 'Page.navigate' ? { errorText: navResults.shift() } : {} });
     try {
       await openVerifiedStartupTabs(engine, item, ['https://one.test', 'https://two.test']);
       assert.deepEqual(events.map(event => [event.type, event.message]), [
@@ -274,9 +305,9 @@ function documentScope() {
         ['profile-start-page-warning', '启动网址加载失败：net::ERR_CONNECTION_REFUSED'],
       ]);
       tabs = [first];
-      cdp.call = async (_socket, method) => { if (method === 'Page.navigate') throw Error('CDP socket disconnected'); };
+      cdp.connect = async () => ({ close() {}, async command(method) { if (method === 'Page.navigate') throw Error('CDP socket disconnected'); } });
       await assert.rejects(openVerifiedStartupTabs(engine, item, ['https://one.test']), /CDP socket disconnected/);
-    } finally { clearTimeout(keepAlive); Object.assign(cdp, previous); }
+    } finally { Object.assign(cdp, previous); }
   });
   const firefoxProfile = profile({ engine: 'firefox', privacy: { fontListMode: 'real', timezoneMode: 'custom', timezone: 'Asia/Shanghai' } });
   const firefox = buildFirefoxFingerprint(firefoxProfile, '145.0.1');

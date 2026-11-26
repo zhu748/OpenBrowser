@@ -104,19 +104,21 @@ async function harness(type, behavior = {}) {
       } finally { h.cleanup(); }
     }
   });
-  await test('worker destruction wins over an earlier still-live CDP snapshot', async () => {
+  await test('worker teardown can outlive two still-live CDP snapshots', async () => {
     const behavior = {}, h = await harness('worker', behavior);
     try {
       await h.startup;
       let reads = 0;
       behavior.targets = (target) => {
         reads += 1;
-        if (reads === 2) h.dispatch('Target.targetDestroyed', { targetId: 'target' });
         return { targetInfos: [target] }; // both snapshots were taken before destruction
       };
-      h.dispatch('Target.detachedFromTarget', { sessionId: 'old', targetId: 'target' });
+      const checking = h.dispatch('Target.detachedFromTarget', { sessionId: 'old', targetId: 'target' });
       await turn();
       assert.equal(reads, 2);
+      assert.equal(h.engine.stopped, undefined);
+      h.dispatch('Target.targetDestroyed', { targetId: 'target' });
+      await checking;
       assert.equal(h.engine.stopped, undefined);
     } finally { h.cleanup(); }
   });
@@ -203,7 +205,7 @@ async function harness(type, behavior = {}) {
       try {
         await h.startup;
         if (destroyed) h.dispatch('Target.targetDestroyed', { targetId: 'target' });
-        h.dispatch('Target.detachedFromTarget', { sessionId: 'old', targetId: 'target' });await turn();
+        await h.dispatch('Target.detachedFromTarget', { sessionId: 'old', targetId: 'target' });
         assert.equal(h.engine.stopped === true, !destroyed);
       } finally { h.cleanup(); }
     }

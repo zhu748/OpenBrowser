@@ -185,6 +185,17 @@ function networkRealm(fp, worker, expose = true) {
     assert.ok(drifted.mismatches.some((m) => m.field === 'connection.rtt'));
     assert.ok(drifted.mismatches.some((m) => m.field === 'connection.downlinkMax'));
   });
+  await test('system language takes precedence over saved custom languages and is verified', async () => {
+    const p = sanitizeProfile(profile('system-language', { languageMode: 'system', fingerprint: { languages: ['de-DE', 'ja-JP'] } }));
+    const fp = buildFingerprint(p);
+    assert.equal(fp.languages[0], Intl.getCanonicalLocales(Intl.DateTimeFormat().resolvedOptions().locale)[0]);
+    assert.deepEqual(p.privacy.fingerprint.languages, ['de-DE', 'ja-JP']);
+    assert.deepEqual(buildFingerprint({ ...p, privacy: { ...p.privacy, languageMode: 'profile' } }).languages, ['de-DE', 'ja-JP']);
+    const { scope } = networkRealm(fp, false);
+    const live = await vm.runInContext(LIVE_PROBE_EXPRESSION, scope);
+    const drifted = evaluateFingerprintDelivery(p, fp, { ...live, language: 'es-ES', languages: ['es-ES'] }, { strict: true });
+    assert.ok(drifted.mismatches.some(({ field }) => field === 'languages'));
+  });
   await test('desktop metrics explicitly apply saved DPR with live viewport dimensions', async () => {
     for (const dpr of [1, 1.5, 2, 4.5]) {
       const p = profile('metrics-' + dpr, { fingerprint: { devicePixelRatio: dpr } });

@@ -1272,7 +1272,8 @@ class BrowserEngine {
         canvas: item.fingerprint.canvas?.mode,
         webgl: item.fingerprint.webgl?.mode,
         webrtc: item.fingerprint.webrtc,
-        ...(item.engine === 'firefox' ? { delivery: item.capabilities?.fingerprintDelivery ? 'verified-document' : 'intent-only' } : {}),
+        delivery: (item.engine === 'firefox' ? item.capabilities?.fingerprintDelivery : item.fingerprintVerified)
+          ? 'verified-document' : 'intent-only',
       } : null,
     };
   }

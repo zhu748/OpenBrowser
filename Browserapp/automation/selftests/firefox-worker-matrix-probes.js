@@ -5,7 +5,7 @@ function matrixSources(snapshot) {
   return {
     '/matrix/classic.js': body,
     '/matrix/shared.js': '"use strict";const first=' + snapshot + ';onconnect=e=>e.ports[0].onmessage=()=>e.ports[0].postMessage(JSON.stringify(first));',
-    '/matrix/service.js': '"use strict";const first=' + snapshot + ';oninstall=()=>skipWaiting();onactivate=e=>e.waitUntil(clients.claim());onmessage=e=>e.ports[0].postMessage(JSON.stringify(first));',
+    '/matrix/service.js': '"use strict";const first=' + snapshot + ';oninstall=e=>e.waitUntil(skipWaiting());onactivate=e=>e.waitUntil(clients.claim());onmessage=e=>e.ports[0].postMessage(JSON.stringify(first));',
     '/matrix/dependency.js': 'export const first=' + snapshot + ';',
     '/matrix/module.js': 'import {first} from "./dependency.js";postMessage(JSON.stringify({...(' + snapshot + '),dependency:first,url:import.meta.url}));',
     '/matrix/nested.js': 'new Worker(URL.createObjectURL(new Blob([' + JSON.stringify(body) + '],{type:"application/javascript"}))).onmessage=e=>postMessage(e.data);',
@@ -51,10 +51,16 @@ async function probeFirefoxWorkerMatrix(snapshot) {
     }],
   ]) results[name] = await run(factory, name.startsWith('shared'));
   const registration = await navigator.serviceWorker.register('/matrix/service.js', { scope: '/' });
-  const worker = registration.installing || registration.waiting || registration.active;
-  if (worker.state !== 'activated') await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(Error('Service worker activation timed out')), 10000);
-    worker.addEventListener('statechange', () => { if (worker.state === 'activated') { clearTimeout(timer);resolve(); } });
+  const worker = await new Promise((resolve, reject) => {
+    const deadline = performance.now() + 10000;
+    const poll = () => {
+      const { installing, waiting, active } = registration;
+      if (active?.state === 'activated') resolve(active);
+      else if (performance.now() >= deadline) reject(Error('Service worker activation timed out (installing: '
+        + (installing?.state || 'none') + ', waiting: ' + (waiting?.state || 'none') + ', active: ' + (active?.state || 'none') + ')'));
+      else setTimeout(poll, 25);
+    };
+    poll();
   });
   results.service = await new Promise(resolve => {
     const channel = new MessageChannel();

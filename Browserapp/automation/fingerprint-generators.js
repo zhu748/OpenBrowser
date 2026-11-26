@@ -915,6 +915,7 @@ function normalizeGpuArchitecture(vendor, arch) {
     if (raw.includes("ampere") || raw.includes("30")) return "ampere";
     if (raw.includes("turing") || raw.includes("20") || raw.includes("16")) return "turing";
   } else if (v === "qualcomm") {
+    if (raw === "adreno-800") return raw;
     if (raw.includes("700") || raw.includes("730") || raw.includes("740") || raw.includes("adreno")) return "adreno-700";
   } else if (v === "arm") {
     if (raw.includes("valhall") || raw.includes("g710") || raw.includes("mali")) return "valhall";

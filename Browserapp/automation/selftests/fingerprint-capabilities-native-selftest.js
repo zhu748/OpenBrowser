@@ -304,8 +304,11 @@ async function main() {
         conn = await load(session, url, fp);
         const live = await h.evaluate(conn, LIVE_PROBE_EXPRESSION);
         assert.equal(live.probeError, undefined);
-        assert.equal(live.webglContextPresent, webgl !== 'blocked');
-        assert.equal(live.webglUnmasked, false);
+        assert.deepEqual(Object.keys(live.webglContexts), ['webgl', 'webgl2']);
+        for (const [type, context] of Object.entries(live.webglContexts)) {
+          assert.equal(context.webglContextPresent, webgl !== 'blocked', type);
+          assert.equal(context.webglUnmasked, false, type);
+        }
         const verified = evaluateFingerprintDelivery(profile, fp, live, { strict: true });
         assert.equal(verified.ok, true, JSON.stringify(verified.mismatches));
         console.log(`PASS live probe distinguishes WebGL mode=${webgl} and metadata=${webglMeta}`);

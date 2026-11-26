@@ -2,7 +2,7 @@
 
 const { fromRoxy } = require('./profile-dto');
 const crypto = require('node:crypto');
-const { fingerprintVersion } = require('../automation/fingerprint/generation');
+const { fingerprintVersion, createFingerprintSeed } = require('../automation/fingerprint/generation');
 const allocations = new WeakMap();
 
 function allocationProof(engine, id, seed, version) {
@@ -48,6 +48,7 @@ function profileFromPreview(engine, input, allocated = new Set()) {
     && !allocations.get(engine).consumed.has(id)
     && !engine.profiles.has(id) && !allocated.has(id);
   const profile = fromRoxy(input, available ? { id } : {});
+  profile.fingerprintSeed ||= createFingerprintSeed();
   allocated.add(profile.id);
   return profile;
 }

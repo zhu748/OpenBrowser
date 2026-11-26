@@ -2,9 +2,9 @@
 
 const crypto = require('node:crypto');
 const { navigateFirefox, screenshotFirefox } = require('../browser-control');
-const { CURRENT_FINGERPRINT_VERSION } = require('../fingerprint/generation');
+const { CURRENT_FINGERPRINT_VERSION, createFingerprintSeed } = require('../fingerprint/generation');
 const { resolveWebSocketDebuggerUrl } = require('./devtools');
-const { booleanValue, firstDefined, firstArray, firstString, normalizeProfileInput, readProxyAssociation } = require('./input');
+const { booleanValue, firstDefined, firstArray, firstString, mergeFingerprintOverrides, normalizeProfileInput, readProxyAssociation } = require('./input');
 const { ok, fail, redactProfileForApi, proxySummary } = require('./responses');
 const { isNoCredentialProxy } = require('../../shared/proxy-redact');
 
@@ -82,6 +82,7 @@ class ProfileRoutes {
     // request error rather than an internal 500 from the write's rejection.
     try {
       const sanitized = this.engine.sanitizeProfile(profile);
+      sanitized.fingerprintSeed ||= createFingerprintSeed();
       const created = this.normalizeProxyAssociationState(sanitized, association.present
         ? association
         : (hasManualProxyConfiguration ? { present: true, value: '' } : association));
@@ -105,8 +106,8 @@ class ProfileRoutes {
     if (!id) return fail('profile id required', 400);
     const current = this.engine.profiles.get(id);
     if (!current) return fail('profile not found', 404);
-    const clearFingerprint = Boolean(input.__clearFingerprint) || input.fingerprint === null || input.privacy?.fingerprint === null;
     let body = normalizeProfileInput(input);
+    const clearFingerprint = body.__clearFingerprint;
     const association = this.resolveProxyAssociation(input, current);
     const hasManualProxyPatch = !association.present && (
       Object.prototype.hasOwnProperty.call(input || {}, 'proxy')
@@ -132,7 +133,7 @@ class ProfileRoutes {
       'name', 'title', 'number', 'language', 'proxy', 'networkMode', 'startUrl', 'os', 'platform',
       'browser', 'userAgent', 'resolution', 'windowSize', 'timezone', 'locale', 'languageCode',
       'geolocation', 'webglVendor', 'webglRenderer', 'hardwareConcurrency', 'deviceMemory', 'doNotTrack',
-      'privacy', 'fingerprint', 'user_proxy_config', 'note', 'width', 'height', 'advanced',
+      'privacy', 'user_proxy_config', 'note', 'width', 'height', 'advanced',
       'proxyMeta', 'tag', 'groupId', 'group_name',
       'proxyId',
     ]);
@@ -145,9 +146,7 @@ class ProfileRoutes {
       else if (key === 'networkMode' && value !== undefined) patch.networkMode = value;
       else if (key === 'languageCode' && value !== undefined) patch.languageCode = value;
       else if (key === 'privacy' && value !== undefined) {
-        const next = { ...(current.privacy || {}), ...(value && typeof value === 'object' ? value : {}) };
-        if (clearFingerprint) delete next.fingerprint;
-        patch.privacy = next;
+        patch.privacy = { ...current.privacy, ...value };
       }
       else if (key === 'platform' && value && typeof value === 'object') patch.platform = { ...(current.platform || {}), ...value };
       else if (key === 'advanced' && value && typeof value === 'object') patch.advanced = { ...(current.advanced || {}), ...value };
@@ -162,16 +161,7 @@ class ProfileRoutes {
           patch.networkMode = 'proxy';
         }
       }
-      else if (key === 'fingerprint' && value && typeof value === 'object') patch.fingerprint = { ...value };
       else if (key !== 'profile_id' && key !== 'user_id' && key !== 'id') patch[key] = value;
-    }
-    if (clearFingerprint) {
-      delete patch.fingerprint;
-      if (!Object.prototype.hasOwnProperty.call(patch, 'privacy')) {
-        const nextPrivacy = { ...(current.privacy || {}) };
-        delete nextPrivacy.fingerprint;
-        patch.privacy = nextPrivacy;
-      }
     }
     const mergedProfile = { ...current, ...patch, id };
     if (clearFingerprint) {
@@ -182,6 +172,10 @@ class ProfileRoutes {
       if (mergedProfile.privacy && typeof mergedProfile.privacy === 'object') {
         delete mergedProfile.privacy.fingerprint;
       }
+    } else if (body.privacy.fingerprint) {
+      const previous = current.privacy?.fingerprint ?? current.fingerprint;
+      mergedProfile.privacy.fingerprint = mergeFingerprintOverrides(previous, body.privacy.fingerprint);
+      delete mergedProfile.fingerprint;
     }
     const next = this.engine.sanitizeProfile(mergedProfile);
     this.normalizeProxyAssociationState(next, association.present
@@ -220,6 +214,7 @@ class ProfileRoutes {
     const next = this.engine.sanitizeProfile({
       ...base,
       id,
+      fingerprintSeed: base.fingerprintSeed || createFingerprintSeed(),
       number,
       name: String(duplicateInput.name || (base.name ? base.name + ' Copy' : 'Environment ' + number)),
       title: String(duplicateInput.name || base.title || base.name || ('Environment ' + number)),
@@ -410,7 +405,7 @@ class ProfileRoutes {
     const id = firstString(input, ['user_id', 'userId', 'profile_id', 'profileId', 'id']);
     if (!id) return fail('profile_id required', 400);
     try {
-      return ok(this.engine.fingerprintFor(id));
+      return ok(await this.engine.inspectFingerprint(id));
     } catch (error) {
       return fail(error.message, 400);
     }

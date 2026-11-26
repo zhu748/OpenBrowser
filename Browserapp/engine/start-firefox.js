@@ -398,7 +398,6 @@ module.exports = {
         delivered.capabilities.imageSizeFilter=true;
       }
       this.assertStartGenerationActive(profile.id, lifecycleGeneration);
-      item.capabilities = delivered.capabilities;
       item.bidiContext = delivered.context;
       item.fingerprintWarnings = delivered.warnings;
       currentStage = 'verify'; this.emitStartProgress(profile.id, 'verify', 94, 'Firefox 页面指纹校验完成', lifecycleGeneration);
@@ -409,6 +408,7 @@ module.exports = {
       if (this.running.get(profile.id) !== item || item.cleanedUp || item.stopping || item.childExitState?.exited || item.childExitState?.error) {
         throw new Error(item.cdpError || 'Firefox 在启动过程中异常退出');
       }
+      item.capabilities = delivered.capabilities;
       currentStage = 'ready'; this.emitStartProgress(profile.id, 'ready', 100, 'Firefox 启动完成', lifecycleGeneration);
       this.startRunningWatch(item);
       // Report verified document delivery and the remaining worker/API limits.

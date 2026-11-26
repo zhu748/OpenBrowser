@@ -7,7 +7,7 @@
 
   const MAX_LATITUDE = 90;
   const MAX_LONGITUDE = 180;
-  const CURRENT_FINGERPRINT_VERSION = 4;
+  const CURRENT_FINGERPRINT_VERSION = 5;
   const MAX_FINGERPRINT_DPR = 5;
   const DEVICE_MEMORY_TIERS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 

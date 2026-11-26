@@ -1,0 +1,40 @@
+{
+  "sources": {
+    "t14-g6-amd": "https://psref.lenovo.com/Product/ThinkPad/ThinkPad_T14_Gen_6_AMD",
+    "x1-carbon-g13": "https://psref.lenovo.com/Detail/ThinkPad_X1_Carbon_Gen_13_Aura_Edition?M=21NS0166US",
+    "x1-carbon-linux": "https://ubuntu.com/certified/search?category=Laptop&limit=517&vendor=Lenovo",
+    "m75q-g5": "https://psref.lenovo.com/Product/ThinkCentre/ThinkCentre_M75q_Gen_5",
+    "thinkstation-p3": "https://psref.lenovo.com/syspool/Sys/PDF/ThinkStation/ThinkStation_P3_Tower/ThinkStation_P3_Tower_Spec.html",
+    "thinkvision-qhd": "https://psref.lenovo.com/product/ThinkVision/ThinkVision_P27q_30_Monitor",
+    "legion-t7": "https://psref.lenovo.com/Detail/Legion_T7_34IAS10?M=90Y6003JUS",
+    "rtx-5080": "https://www.nvidia.com/en-us/geforce/graphics-cards/50-series/rtx-5080/",
+    "mac-mini-intel": "https://support.apple.com/en-us/111912",
+    "core-i7-8700b": "https://www.intel.com/content/www/us/en/products/sku/134905/intel-core-i78700b-processor-12m-cache-up-to-4-60-ghz/specifications.html",
+    "mac-mini-m4": "https://support.apple.com/en-us/121555",
+    "mac-studio-2025": "https://support.apple.com/en-us/122211",
+    "studio-display-2022": "https://support.apple.com/en-us/111890",
+    "macos-tahoe-updates": "https://support.apple.com/en-us/122868",
+    "macbookair13-m5": "https://support.apple.com/en-us/126320",
+    "macbookair15-m5": "https://support.apple.com/en-gb/126321"
+  },
+  "devices": [
+    {"platform": "windows", "model": "ThinkPad T14 Gen 6 (AMD)", "cpu": "Ryzen AI 5 PRO 340", "logicalProcessors": 12, "ramGiB": 16, "panel": [1920, 1200], "dpr": 1.25, "gpu": {"vendor": "amd", "name": "AMD Radeon 840M", "architecture": "rdna-3.5"}, "source": "t14-g6-amd", "laptop": true},
+    {"platform": "windows", "model": "ThinkPad T14 Gen 6 (AMD)", "cpu": "Ryzen AI 7 PRO 350", "logicalProcessors": 16, "ramGiB": 32, "panel": [1920, 1200], "dpr": 1.25, "gpu": {"vendor": "amd", "name": "AMD Radeon 860M", "architecture": "rdna-3.5"}, "source": "t14-g6-amd", "laptop": true},
+    {"platform": "windows", "model": "ThinkPad X1 Carbon Gen 13 Aura Edition", "cpu": "Core Ultra 7 258V", "logicalProcessors": 8, "ramGiB": 32, "panel": [2880, 1800], "dpr": 1.5, "gpu": {"vendor": "intel", "name": "Intel(R) Arc(TM) 140V Graphics", "architecture": "battlemage"}, "source": ["x1-carbon-g13"], "laptop": true},
+    {"platform": "windows", "model": "ThinkCentre M75q Gen 5", "cpu": "Ryzen 7 PRO 8700GE", "logicalProcessors": 16, "ramGiB": 16, "panel": [2560, 1440], "dpr": 1, "gpu": {"vendor": "amd", "name": "AMD Radeon 780M", "architecture": "rdna-3"}, "source": ["m75q-g5", "thinkvision-qhd"], "laptop": false},
+    {"platform": "windows", "model": "ThinkStation P3 Tower", "cpu": "Core i7-13700", "logicalProcessors": 24, "ramGiB": 32, "panel": [2560, 1440], "dpr": 1, "gpu": {"vendor": "nvidia", "name": "NVIDIA RTX A2000 12GB", "architecture": "ampere"}, "source": ["thinkstation-p3", "thinkvision-qhd"], "laptop": false},
+    {"platform": "linux", "model": "ThinkPad T14 Gen 6 (AMD)", "cpu": "Ryzen AI 5 PRO 340", "logicalProcessors": 12, "ramGiB": 16, "panel": [1920, 1200], "dpr": 1, "gpu": {"vendor": "amd", "name": "AMD Radeon 840M", "architecture": "rdna-3.5"}, "source": "t14-g6-amd", "laptop": true},
+    {"platform": "linux", "model": "ThinkPad T14 Gen 6 (AMD)", "cpu": "Ryzen AI 7 PRO 350", "logicalProcessors": 16, "ramGiB": 32, "panel": [1920, 1200], "dpr": 1, "gpu": {"vendor": "amd", "name": "AMD Radeon 860M", "architecture": "rdna-3.5"}, "source": "t14-g6-amd", "laptop": true},
+    {"platform": "linux", "model": "ThinkPad X1 Carbon Gen 13 Aura Edition", "cpu": "Core Ultra 7 258V", "logicalProcessors": 8, "ramGiB": 32, "panel": [2880, 1800], "dpr": 2, "gpu": {"vendor": "intel", "name": "Intel(R) Arc(TM) 140V Graphics", "architecture": "battlemage"}, "source": ["x1-carbon-g13", "x1-carbon-linux"], "laptop": true},
+    {"platform": "linux", "model": "ThinkCentre M75q Gen 5", "cpu": "Ryzen 7 PRO 8700GE", "logicalProcessors": 16, "ramGiB": 16, "panel": [2560, 1440], "dpr": 1, "gpu": {"vendor": "amd", "name": "AMD Radeon 780M", "architecture": "rdna-3"}, "source": ["m75q-g5", "thinkvision-qhd"], "laptop": false},
+    {"platform": "linux", "model": "ThinkStation P3 Tower", "cpu": "Core i7-13700", "logicalProcessors": 24, "ramGiB": 32, "panel": [2560, 1440], "dpr": 1, "gpu": {"vendor": "nvidia", "name": "NVIDIA RTX A2000 12GB", "architecture": "ampere"}, "source": ["thinkstation-p3", "thinkvision-qhd"], "laptop": false},
+    {"platform": "windows", "model": "Legion Tower 7i Gen 10", "cpu": "Core Ultra 9 285K", "logicalProcessors": 24, "ramGiB": 32, "panel": [2560, 1440], "dpr": 1, "gpu": {"vendor": "nvidia", "name": "NVIDIA GeForce RTX 5080", "architecture": "blackwell"}, "source": ["legion-t7", "rtx-5080", "thinkvision-qhd"], "laptop": false},
+    {"platform": "macos", "model": "Mac mini (2018, Intel)", "cpu": "Core i7-8700B", "logicalProcessors": 12, "ramGiB": 16, "panel": [5120, 2880], "dpr": 2, "gpu": {"vendor": "intel", "name": "Intel(R) UHD Graphics 630", "architecture": "gen-9"}, "source": ["mac-mini-intel", "core-i7-8700b", "studio-display-2022", "macos-15-compatibility"], "laptop": false, "macOS": ["12.7.0", "13.6.0", "14.7.0", "15.7.0"]},
+    {"platform": "macos_arm", "model": "Mac mini (2024)", "cpu": "Apple M4", "logicalProcessors": 10, "ramGiB": 16, "panel": [5120, 2880], "dpr": 2, "gpu": {"vendor": "apple", "name": "Apple M4", "architecture": "apple-m4"}, "source": ["mac-mini-m4", "studio-display-2022", "macos-26-compatibility", "macos-27-compatibility"], "laptop": false, "macOS": ["15.7.0", "26.0.0", "27.0.0"]},
+    {"platform": "macos_arm", "model": "Mac mini (2024)", "cpu": "Apple M4 Pro", "logicalProcessors": 12, "ramGiB": 24, "panel": [5120, 2880], "dpr": 2, "gpu": {"vendor": "apple", "name": "Apple M4 Pro", "architecture": "apple-m4"}, "source": ["mac-mini-m4", "studio-display-2022", "macos-26-compatibility", "macos-27-compatibility"], "laptop": false, "macOS": ["15.7.0", "26.0.0", "27.0.0"]},
+    {"platform": "macos_arm", "model": "Mac Studio (2025)", "cpu": "Apple M4 Max", "logicalProcessors": 14, "ramGiB": 36, "panel": [5120, 2880], "dpr": 2, "gpu": {"vendor": "apple", "name": "Apple M4 Max", "architecture": "apple-m4"}, "source": ["mac-studio-2025", "studio-display-2022", "macos-26-compatibility", "macos-27-compatibility"], "laptop": false, "macOS": ["15.7.0", "26.0.0", "27.0.0"]},
+    {"platform": "macos_arm", "model": "Mac Studio (2025)", "cpu": "Apple M3 Ultra", "logicalProcessors": 28, "ramGiB": 96, "panel": [5120, 2880], "dpr": 2, "gpu": {"vendor": "apple", "name": "Apple M3 Ultra", "architecture": "apple-m3"}, "source": ["mac-studio-2025", "studio-display-2022", "macos-26-compatibility", "macos-27-compatibility"], "laptop": false, "macOS": ["15.7.0", "26.0.0", "27.0.0"]},
+    {"platform": "macos_arm", "model": "MacBook Air 13-inch (2026, M5)", "cpu": "Apple M5", "logicalProcessors": 10, "ramGiB": 16, "panel": [2560, 1664], "dpr": 2, "gpu": {"vendor": "apple", "name": "Apple M5", "architecture": "apple-m5"}, "source": ["macbookair13-m5", "macos-tahoe-updates", "macos-27-compatibility"], "laptop": true, "macOS": ["26.4.0", "27.0.0"]},
+    {"platform": "macos_arm", "model": "MacBook Air 15-inch (2026, M5)", "cpu": "Apple M5", "logicalProcessors": 10, "ramGiB": 16, "panel": [2880, 1864], "dpr": 2, "gpu": {"vendor": "apple", "name": "Apple M5", "architecture": "apple-m5"}, "source": ["macbookair15-m5", "macos-tahoe-updates", "macos-27-compatibility"], "laptop": true, "macOS": ["26.4.0", "27.0.0"]}
+  ]
+}

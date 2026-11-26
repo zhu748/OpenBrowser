@@ -17,6 +17,9 @@ const desktopCatalog = require('../data/desktop-personas-v3.json');
 const mobileCatalog = require('../data/mobile-personas-v3.json');
 const desktopAdditions = require('../data/desktop-personas-v4.json');
 const mobileAdditions = require('../data/mobile-personas-v4.json');
+const desktopExpansion = require('../data/desktop-personas-v5.json');
+const mobileExpansion = require('../data/mobile-personas-v5.json');
+const { mobilePersona } = require('../mobile-personas');
 
 function onHost(platform, run) {
   const original = Object.getOwnPropertyDescriptor(process, 'platform');
@@ -79,7 +82,8 @@ async function main() {
   assert.equal(storedUa.osVersion, 'Windows 7');
   assert.throws(() => assertFingerprintConsistency(storedUa), /last supporting major: 109/);
   assert.equal(sanitizeProfile({ id: 'legacy', name: 'Legacy' }).fingerprintVersion, 1);
-  for (const value of [0, 5, true, 'next', {}, []]) {
+  assert.equal(fingerprintVersion(String(CURRENT_FINGERPRINT_VERSION)), CURRENT_FINGERPRINT_VERSION);
+  for (const value of [0, CURRENT_FINGERPRINT_VERSION + 1, true, 'next', {}, []]) {
     assert.throws(() => fingerprintVersion(value), /Unsupported fingerprintVersion/);
     assert.throws(() => sanitizeProfile({ id: 'bad', name: 'Bad', fingerprintVersion: value }));
   }
@@ -191,17 +195,23 @@ async function main() {
     return buildFingerprint({ ...sanitizeProfile({ id: `catalog-${os}`, name: 'Catalog', os, osVersion,
       fingerprintVersion: version, fingerprintSeed: `catalog-${i}` }), kernelVersion });
   }
-  for (const [catalog, extensions] of [[desktopCatalog, desktopAdditions], [mobileCatalog, mobileAdditions]]) {
-    const sources = { ...catalog.sources, ...extensions.sources };
-    const devices = [...catalog.devices, ...extensions.devices];
+  for (const catalogs of [[desktopCatalog, desktopAdditions, desktopExpansion], [mobileCatalog, mobileAdditions, mobileExpansion]]) {
+    const sources = Object.assign({}, ...catalogs.map(catalog => catalog.sources));
+    const devices = catalogs.flatMap(catalog => catalog.devices);
     for (const device of devices) {
       for (const reference of [device.source].flat()) assert.match(sources[reference], /^https:\/\//);
     }
   }
+  const mobileModels = new Set([...mobileCatalog.devices, ...mobileAdditions.devices].map(row => row.model));
+  for (const row of mobileExpansion.devices) {
+    assert.ok(!mobileModels.has(row.model), `duplicate mobile model ${row.model}`);
+    mobileModels.add(row.model);
+    assert.deepEqual([row.width, row.height], row.panel.map(value => Math.round(value / row.dpr)), row.model);
+  }
   const desktopShape = ({ cores, width, height, dpr, gpu }) => JSON.stringify([cores, width, height, dpr, gpu]);
-  for (const version of [3, CURRENT_FINGERPRINT_VERSION]) {
-    const desktopDevices = version === 3 ? desktopCatalog.devices : [...desktopCatalog.devices, ...desktopAdditions.devices];
-    const mobileDevices = version === 3 ? mobileCatalog.devices : [...mobileCatalog.devices, ...mobileAdditions.devices];
+  for (const version of [3, 4, 5]) {
+    const desktopDevices = [desktopCatalog, desktopAdditions, desktopExpansion].slice(0, version - 2).flatMap(catalog => catalog.devices);
+    const mobileDevices = [mobileCatalog, mobileAdditions, mobileExpansion].slice(0, version - 2).flatMap(catalog => catalog.devices);
     const reach = new Set();
     for (const [inputOs, platforms] of [['Windows', ['windows']], ['macos', ['macos', 'macos_arm']],
       ['macos_arm', ['macos_arm']], ['Linux', ['linux']], ['Android', ['android']], ['iOS', ['ios']]]) {
@@ -225,6 +235,10 @@ async function main() {
           assert.ok(row && row.osVersions.includes(fp.mobileDevice.osVersion), JSON.stringify(fp.mobileDevice));
           assert.deepEqual([fp.hardwareConcurrency, fp.screen.width, fp.screen.height, fp.screen.devicePixelRatio],
             [row.cores, row.width, row.height, row.dpr]);
+          if (row.gpuArchitecture) {
+            assert.equal(fp.webgl.gpu.architecture, row.gpuArchitecture);
+            assert.equal(fp.deviceMemory, row.ramGiB >= 8 ? 8 : 4);
+          }
           reach.add(row.model);
           continue;
         }
@@ -248,6 +262,20 @@ async function main() {
         height: Math.round(row.panel[1] / row.dpr), dpr: row.dpr, gpu: row.gpu.name }));
     assert.deepEqual(reach, expectedReach, 'all projected catalog devices are reachable');
   }
+  const v4Hardware = [];
+  for (const os of ['Windows', 'Linux', 'macos', 'macos_arm', 'Android', 'iOS']) {
+    for (let index = 0; index < 24; index += 1) {
+      const fp = buildFingerprint({ id: 'catalog-replay', os, fingerprintVersion: 4,
+        fingerprintSeed: 'replay-' + index, kernelVersion, privacy: { fontListMode: 'real' } });
+      v4Hardware.push([fp.os, fp.hardwareConcurrency, fp.deviceMemory, fp.screen.width, fp.screen.height,
+        fp.screen.devicePixelRatio, fp.webgl.renderer, fp.webgl.gpu, fp.clientHints.deviceModel, fp.userAgentMetadata.platformVersion]);
+    }
+  }
+  assert.equal(crypto.createHash('sha256').update(JSON.stringify(v4Hardware)).digest('hex'),
+    '21786ac1c734dc1680187f1e1e3906d7444d27f43b15cd0543c9575060b7d56b', 'V4 hardware stays stable after the V5 expansion');
+  const onePlus = mobilePersona(1, 'android', { deviceModel: 'CPH2655', fingerprintVersion: 5 });
+  assert.equal(onePlus.uaProfile.metadata.model, 'CPH2655');
+  assert.throws(() => mobilePersona(1, 'ios', { deviceModel: 'iPhone XR', osVersion: 'iOS 27', fingerprintVersion: 5 }), /不兼容/);
   assert.equal(current('Android', 1, 'Android 17').mobileDevice.osVersion, 17);
   assert.equal(current('iOS', 1, 'iOS 27').mobileDevice.osVersion, 27);
   const mac27 = current('macos', 1, 'macOS 27');
@@ -272,6 +300,6 @@ async function main() {
   }
   await routes.routeProfileCreate({ input: { id: 'future', name: 'Future', fingerprintVersion: 9 } });
   assert.ok(!profiles.has('future'), 'unsupported versions must not be silently downgraded');
-  console.log(`fingerprint-generation: OK (240 legacy identities, ${total} v2 profiles, 1920 each for v3/v4, cross-host replay, API versions)`);
+  console.log(`fingerprint-generation: OK (240 legacy identities, ${total} v2 profiles, V3–V5 catalogue reachability, V4 hardware replay, API versions)`);
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

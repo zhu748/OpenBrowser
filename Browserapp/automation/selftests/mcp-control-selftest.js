@@ -69,7 +69,7 @@ function fakeEngine() {
         assignedExtensions: [],
       }));
     },
-    fingerprintFor(id) {
+    async inspectFingerprint(id) {
       const profile = profiles.get(id);
       if (!profile) throw new Error('profile not found');
       return { ...(profile.privacy?.fingerprint || profile.fingerprint || {}) };

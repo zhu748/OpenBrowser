@@ -61,6 +61,23 @@ const ok = (name, cond) => { assert.ok(cond, name); console.log('  PASS  ' + nam
   ok('privacy.webrtc disabled preserved', p2.privacy.webrtc === 'disabled');
   ok('privacy.geoMode disabled preserved', p2.privacy.geoMode === 'disabled');
 
+  await route('POST', '/api/profiles/update', { profile_id: id2, hardware_concurrency: 8, device_memory: 4,
+    fingerprint: { canvasId: 1357, audioId: 429.5, network: { rtt: 150, downlink: 2.5 },
+      clientHints: { architecture: 'x86', bitness: '64' } } });
+  r = await route('POST', '/api/profiles/update', { profile_id: id2, hardware_concurrency: null, device_memory: false,
+    privacyExtra: { fingerprint: { webglRenderer: 'Custom renderer', network: { rtt: 200 }, clientHints: { bitness: '32' } } } });
+  ok('partial fingerprint update succeeds', r.code === 0);
+  const updated = engine.profiles.get(id2).privacy;
+  assert.deepStrictEqual([updated.cores, updated.memory], [8, 4]);
+  assert.deepStrictEqual([updated.fingerprint.canvasId, updated.fingerprint.audioId], [1357, 429.5]);
+  assert.deepStrictEqual(updated.fingerprint.network, { downlink: 2.5, rtt: 200 });
+  assert.deepStrictEqual(updated.fingerprint.clientHints, { architecture: 'x86', bitness: '32' });
+  ok('partial fingerprint updates retain untouched overrides and ignore invalid numeric aliases', updated.fingerprint.webglRenderer === 'Custom renderer');
+  await route('POST', '/api/profiles/update', { profile_id: id2, privacy: { fingerprint: { network: null } } });
+  ok('an individual null clears its override', engine.profiles.get(id2).privacy.fingerprint.network === undefined);
+  await route('POST', '/api/profiles/update', { profile_id: id2, fingerprint: null });
+  ok('an explicit fingerprint reset clears the override object', engine.profiles.get(id2).privacy.fingerprint === undefined);
+
   // Nested credentials follow the same public response policy as the primary
   // account; redaction must never erase the engine-owned credentials.
   const accountSecret = 'nested-password-test-only';

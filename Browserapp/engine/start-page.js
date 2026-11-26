@@ -19,6 +19,7 @@ const { profileWriteGuard } = require('./profile-write-guard');
 const { readKernelVersion } = require('./launch-profile');
 const { hostScreenSummary } = require('./launch-display');
 const { normalizeCoordinates } = require('../shared/profile-values');
+const { navigateStartupDocument } = require('./startup-session');
 
 // Proxy support is a required engine capability; preserve dependency load errors.
 const { lookupDirectCountry, lookupNetworkCountry } = require('../proxy-forwarder');
@@ -253,28 +254,11 @@ module.exports = {
     const expected = String(startUrl || '').trim();
     let keep = values.find((tab) => this.isStartPageUrl(tab.url)) || values[0];
     const preferredId = keep?.id;
-    // Always force-navigate to OpenBrowser start page when provided (148 kernel may open NTP/about:blank).
-    if (expected && keep?.webSocketDebuggerUrl) {
+    if (expected) {
       try {
-        await cdp.call(keep.webSocketDebuggerUrl, 'Page.enable', {}).catch(() => {});
-        const navigate = async () => {
-          const result = await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected });
-          if (!result?.errorText) return;
-          if (options.onNavigationError) options.onNavigationError(result.errorText);
-          else if (options.strict) throw new Error(result.errorText);
-        };
-        const href = String(keep.url || '');
-        // about:blank launch or wrong page → navigate; already on start page → reload so
-        // document-start fingerprint scripts registered after first paint still run.
-        if (this.isStartPageUrl(href) && href.includes(expected.split('?')[0])) {
-          await cdp.call(keep.webSocketDebuggerUrl, 'Page.reload', { ignoreCache: true }).catch(navigate);
-        } else {
-          await navigate();
-        }
-        await new Promise((resolve) => { const t = setTimeout(resolve, 400); t.unref?.(); });
+        await navigateStartupDocument(keep, expected, options);
       } catch (error) {
         if (options.strict) throw error;
-        try { await cdp.call(keep.webSocketDebuggerUrl, 'Page.navigate', { url: expected }); } catch (__) {}
       }
     }
     const after = await cdp.tabs(port).catch(() => values);

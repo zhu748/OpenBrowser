@@ -7,6 +7,7 @@ const { randomUUID: uid } = require("node:crypto");
 const { sanitizeProfile } = require("../../engine/profile-sanitizer");
 const { assertProfileId } = require("../../automation/isolation");
 const { buildFingerprint, assertFingerprintConsistency } = require("../../automation/fingerprint");
+const { createFingerprintSeed } = require("../../automation/fingerprint/generation");
 const { buildFirefoxFingerprint } = require("../../automation/firefox-fingerprint");
 const { fromRoxy, toRoxy } = require("../profile-dto");
 const { buildProjectLookup, decorateProfile } = require("../profile-index");
@@ -273,6 +274,7 @@ async function profilesClone(service, p) {
     sanitizeProfile({
       ...v,
       id: uid(),
+      fingerprintSeed: v.fingerprintSeed || createFingerprintSeed(),
       name: v.name + " 副本",
       number: ++number,
       createdAt: undefined,

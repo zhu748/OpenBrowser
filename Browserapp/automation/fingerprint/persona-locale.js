@@ -6,8 +6,12 @@ const { normalizeLanguageTags, resolveProfileLanguage } = require('../locale-fro
 function resolvePersonaLanguages(profile) {
   const privacy = profile.privacy || {};
   const fpIn = privacy.fingerprint && typeof privacy.fingerprint === 'object' ? privacy.fingerprint : profile.fingerprint;
+  const resolvedLanguage = resolveProfileLanguage(profile);
+  const candidates = /^(system|real)$/i.test(String(privacy.languageMode || '').trim())
+    ? [resolvedLanguage]
+    : [privacy.languages, fpIn?.languages, profile.languages, resolvedLanguage];
   let languages;
-  for (const candidate of [privacy.languages, fpIn?.languages, profile.languages, resolveProfileLanguage(profile)]) {
+  for (const candidate of candidates) {
     languages = normalizeLanguageTags(candidate);
     if (languages.length) break;
   }

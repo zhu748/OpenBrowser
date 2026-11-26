@@ -19,6 +19,7 @@ const pool = require("./data/mobile-devices.json");
 const corrections = require('./data/mobile-device-corrections.json');
 const curated = require('./data/mobile-personas-v3.json');
 const additions = require('./data/mobile-personas-v4.json');
+const expansion = require('./data/mobile-personas-v5.json');
 const { buildUaProfile, normalizeSelectedOsVersion } = require("./user-agent");
 
 const correctedDevices = new Map(corrections.devices.map((device) => [`${device.os}:${device.model}`, device]));
@@ -32,9 +33,13 @@ const runtimeDevices = catalogDevices.filter((device) => !(device.os === 'androi
 const devicesByOs = new Map(['android', 'ios'].map((os) => [os, runtimeDevices.filter((device) => device.os === os)]));
 const androidCatalog = catalogDevices.filter((device) => device.os === 'android');
 const eligibleDevices = new Set(runtimeDevices);
-const curatedByOs = new Map(['android', 'ios'].map(os => [os, curated.devices.filter(device => device.os === os)]));
-const expandedByOs = new Map(['android', 'ios'].map(os => [
-  os, [...curatedByOs.get(os), ...additions.devices.filter(device => device.os === os)],
+const mobileV4 = [...curated.devices, ...additions.devices];
+const mobilePools = new Map([
+  [3, curated.devices],
+  [4, mobileV4],
+  [5, [...mobileV4, ...expansion.devices]],
+].map(([version, devices]) => [version,
+  new Map(['android', 'ios'].map(os => [os, devices.filter(device => device.os === os)])),
 ]));
 
 /** Operating systems whose personas the injector can currently back with a consistent surface. */
@@ -53,7 +58,7 @@ const normalizeOs = (os) => (String(os || "").toLowerCase() === "ios" ? "ios" : 
 
 function devicesForOs(os, fingerprintVersion) {
   const key = normalizeOs(os);
-  return (fingerprintVersion >= 4 ? expandedByOs : fingerprintVersion >= 3 ? curatedByOs : devicesByOs).get(key).slice();
+  return (mobilePools.get(Number(fingerprintVersion)) || devicesByOs).get(key).slice();
 }
 
 function supportsRuntimePersona(os) {
@@ -311,6 +316,7 @@ function mobilePersona(seedU32, os = "android", options = {}) {
       vendor: device.gpuVendor,
       renderer: device.gpuRenderer,
       family: gpuFamily(device.gpuVendor),
+      ...(device.gpuArchitecture ? { architecture: device.gpuArchitecture } : {}),
     },
     userAgent,
     uaProfile,
