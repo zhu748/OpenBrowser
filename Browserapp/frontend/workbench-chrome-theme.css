@@ -1,4 +1,21 @@
-:root[data-theme=light]{--local-usage-border-orange:#fed1d1;--local-usage-border-blue:#6cf;--local-usage-border-purple:#f462fe}:root[data-theme=dark]{--local-usage-border-orange:#ff8b64;--local-usage-border-blue:#4161ff;--local-usage-border-purple:#e65cff}
+:root[data-theme=light] {
+  --local-usage-card-shadow: rgba(17, 18, 19, 0.04);
+  --local-usage-brand-ring: rgba(17, 163, 253, 0.16);
+  --local-usage-pill-bg: rgba(17, 163, 253, 0.11);
+  --local-usage-live-bg: rgba(29, 201, 77, 0.07);
+  --local-usage-live-ring: rgba(29, 201, 77, 0.24);
+  --local-usage-live-ring-soft: rgba(29, 201, 77, 0.08);
+}
+
+:root[data-theme=dark] {
+  --local-usage-card-shadow: rgba(0, 0, 0, 0.24);
+  --local-usage-brand-ring: rgba(63, 182, 253, 0.22);
+  --local-usage-pill-bg: rgba(17, 163, 253, 0.18);
+  --local-usage-live-bg: rgba(29, 201, 77, 0.12);
+  --local-usage-live-ring: rgba(59, 227, 101, 0.28);
+  --local-usage-live-ring-soft: rgba(59, 227, 101, 0.08);
+}
+
 .ob-startup-status {
   box-sizing: border-box;
   max-inline-size: 36rem;

@@ -8,7 +8,7 @@ import { n as useFeedback } from './agent-BmSFI9WH.js';
 import { t as Tooltip } from './rx-tooltip-CNCSEJGC.js';
 
 const props = defineProps({ upgradeList: { type: Array, default: () => [] } });
-const emit = defineEmits(['onDownloadClick']);
+const emit = defineEmits(['onDownloadClick', 'manage']);
 const confirm = useConfirm();
 const [, report] = useFeedback();
 const family = ref('All');
@@ -81,25 +81,31 @@ function remove(event, row) {
               <div v-if="row._light" class="absolute top-0 right-0 w-2 h-2 bg-red rounded-full"></div>
             </div>
             <div>
-              <div class="version">{{ row.coreType === 'Firefox' ? 'RoxyFirefox' : 'RoxyChrome' }} {{ row.coreVersion }}</div>
+              <div class="flex items-center gap-1.5">
+                <span class="version">{{ row.coreType === 'Firefox' ? 'Firefox' : 'Chrome' }} {{ row.coreVersion }}</span>
+                <span v-if="row.primary" class="text-2.5 px-1.5 py-0.5 rounded bg-[var(--colors-background-bg-info)] text-[var(--colors-text-text-brand)] font-600">{{ $t('默认内核') }}</span>
+              </div>
               <div v-if="row._desc" class="mt-0.5 desc">{{ row._desc }}</div>
             </div>
           </div>
           <div class="shrink-0 flex items-center gap-2 pr-4">
             <component :is="row.status === 'downloading' ? Tooltip : 'div'" tooltip-content-class="py-1 px-2">
-              <Button severity="secondary" variant="outlined" size="xxs" :class="{ group: row.status === 'downloading' }"
+              <Button severity="secondary" variant="outlined" size="xxs"
                 :disabled="row.status === 'downloaded' || row.status === 'downloading'" @click="install(row)">
-                <Icon class="group-hover:hidden" :class="{ 'loading-circle': row.status === 'downloading' }"
+                <Icon :class="{ 'loading-circle': row.status === 'downloading' }"
                   :name="row.status === 'downloaded' ? 'base/rx_ic_check' : 'base/rx_ic_download'" color="var(--colors-icon-icon-secondary)" />
-                <Icon class="hidden group-hover:block" name="base/rx_ic_pause" color="var(--colors-icon-icon-secondary)" />
                 <span>{{ row.status === 'downloaded' ? $t('下载完成') : $t('下载') }}</span>
               </Button>
             </component>
             <Button text severity="secondary" size="xxs" icon="base/rx_ic_bin_1"
-              :disabled="!['downloaded', 'update'].includes(row.status)" @click="remove($event, row)" />
+              :disabled="!['downloaded', 'update'].includes(row.status) || row.primary" @click="remove($event, row)" />
           </div>
         </div>
       </div>
+    </div>
+    <div class="w-full -mt-3 px-4 py-2 flex justify-end" :class="{ 'border-t border-solid border-[var(--colors-border-border-subtle)]': !groups.length }">
+      <Button severity="secondary" variant="text" size="xs" icon="base/rx_ic_hardware"
+        :label="$t('前往内核管理')" @click="emit('manage')" />
     </div>
   </div>
 </template>

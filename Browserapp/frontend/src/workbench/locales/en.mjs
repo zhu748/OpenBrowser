@@ -4921,7 +4921,14 @@ const messages = {
   "（仅默认卡片会被用于组合支付）": "(Only default card will be used for combined payment)",
   "（可选）": "(Optional)",
   "（脚本日志文件不存在）": "(Script log file does not exist)",
-  "，AI Agent 积分 {discount} 折扣": ", Agent credits: {discount} discount"
+  "，AI Agent 积分 {discount} 折扣": ", Agent credits: {discount} discount",
+  "本地工作区": "Local Workspace",
+  "无限制": "Unlimited",
+  "本地窗口无限制": "Unlimited local profiles",
+  "前往内核管理": "Manage Kernels",
+  "Skill 管理": "Skills",
+  "默认内核": "Default",
+  "窗口总数": "Total Profiles"
 };
 
 export { messages as default };

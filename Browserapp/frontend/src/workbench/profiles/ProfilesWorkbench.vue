@@ -64,16 +64,21 @@ function restoreTab() {
 }
 function selectFromRoute(options) {
   const selected = options.find(tab => tab.id === route.query.activeTabId);
-  if (selected) activeId.value = selected.id;
+  if (!selected) return false;
+  activeId.value = selected.id;
+  return true;
 }
+
+watch(() => route.query.activeTabId, () => {
+  selectFromRoute([...tabs.value, ...suffixTabs.value]);
+});
 
 async function loadTabs() {
   const { code, data, msg } = await requests.window.userGetWindowFilterNameListList();
   if (code === 0) {
     const filters = data.map((tab, index) => ({ ...tab, id: String(index), name: tab.filter_name, label: tab.filter_name }));
     tabs.value = [...fixedTabs, ...filters.concat(remembered).sort((left, right) => left.sort - right.sort)];
-    selectFromRoute(tabs.value);
-    restoreTab();
+    if (!selectFromRoute(tabs.value)) restoreTab();
     setTimeout(() => tabList.value?.updateInkBar(), 1000);
   }
   showStatus(code, msg);
@@ -135,9 +140,7 @@ async function saveSort() {
 }
 
 onBeforeMount(() => {
-  restoreTab();
-  selectFromRoute(suffixTabs.value);
-  restoreTab();
+  if (!selectFromRoute([...tabs.value, ...suffixTabs.value])) restoreTab();
   void nextTick(loadTabs);
 });
 </script>

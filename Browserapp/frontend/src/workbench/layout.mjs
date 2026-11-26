@@ -42,6 +42,7 @@ function sidebarItems(projectChildren) {
     { path: 'proxy', name: 'agent-list', meta: { title: $t('代理 IP'), icon: 'base/rx_ic_internet' } },
     { path: 'account', name: 'local-account-root', meta: { title: $t('平台账号'), icon: 'base/rx_ic_keys' } },
     { path: 'extensions', name: 'local-extensions', meta: { title: $t('扩展中心'), icon: 'base/rx_ic_extension_store' } },
+    { path: 'kernels', name: 'local-kernels', meta: { title: $t('内核管理'), icon: 'base/rx_ic_hardware' } },
     {
       path: 'automation', name: 'local-automation-group', meta: { title: $t('AI & 自动化'), type: 'group' },
       children: [
@@ -51,7 +52,7 @@ function sidebarItems(projectChildren) {
         { path: 'task-manager', name: 'agent-console-task-manager', meta: { title: $t('任务管理'), icon: 'roxy-agent/rx-ic-task-manager' } },
         { path: 'my-templates', name: 'agent-console-my-templates', meta: { title: $t('我的模板'), icon: 'roxy-agent/rx-ic-templates' } },
         { path: 'api-keys', name: 'api-keys', meta: { title: 'API & AI MCP', icon: 'base/rx_ic_doc_code' } },
-        { path: 'skills', name: 'local-agent-skills', meta: { title: 'Skill 管理', icon: 'base/rx_ic_doc_code' } },
+        { path: 'skills', name: 'local-agent-skills', meta: { title: $t('Skill 管理'), icon: 'base/rx_ic_puzzle' } },
       ],
     },
   ];

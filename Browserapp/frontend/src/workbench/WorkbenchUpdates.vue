@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, useTemplateRef } from './workbench-vue.js';
+import { b as useRouter } from './rich-html-link-VdBpR3Cm.js';
 import { n as useFeedback } from './agent-BmSFI9WH.js';
 import { Z as Icon } from './basecomponent-ClhuVxJN.js';
 import { t as Button } from './rx-button-DyzuUt-V.js';
@@ -11,6 +12,7 @@ import ClientUpdatePanel from './workbench-client-update-panel.js';
 import KernelUpdatePanel from './workbench-kernel-update-panel.js';
 
 const props = defineProps({ clientOnly: Boolean });
+const router = useRouter();
 const current = ref(props.clientOnly ? 'client' : 'kernel');
 const kernels = ref([]);
 const changes = computed(() => kernels.value.flatMap(group => group.list).filter(row => row.status === 'update').length);
@@ -36,6 +38,10 @@ async function toggle(event) {
   await load();
   popover.value?.instance?.toggle(event, target);
 }
+function openKernelManager() {
+  popover.value?.instance?.hide();
+  void router.push('/kernels');
+}
 onMounted(load);
 </script>
 
@@ -56,7 +62,7 @@ onMounted(load);
         <TabPanels class="!pa-0 min-h-25 max-h-90 overflow-auto">
           <TabPanel value="client" class="overflow-hidden"><ClientUpdatePanel /></TabPanel>
           <TabPanel v-if="!clientOnly" value="kernel" class="overflow-hidden">
-            <KernelUpdatePanel :upgrade-list="kernels" @on-download-click="load" />
+            <KernelUpdatePanel :upgrade-list="kernels" @on-download-click="load" @manage="openKernelManager" />
           </TabPanel>
         </TabPanels>
       </Tabs>

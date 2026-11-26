@@ -47,7 +47,7 @@ void resolveVersion();
     <Brand class="agent-console-version-guard__brand" />
     <section class="agent-console-version-guard__hero">
       <h1><template v-if="chinese"><span class="agent-console-version-guard__title-latin">AI Agent&nbsp;</span><span>焕新升级</span></template><template v-else>AI Agent New Upgrade</template></h1>
-      <p>{{ chinese ? '更新 Roxy 浏览器至最新版本体验' : 'Update Roxy Browser to the latest version' }}</p>
+      <p>{{ chinese ? '更新 OpenBrowser 至最新版本体验' : 'Update OpenBrowser to the latest version' }}</p>
       <span class="agent-console-version-guard__sr-only">{{ $t('当前版本不支持 AI Agent，请更新到 v{version} 或更高版本。', { version: minimumVersion }) }}</span>
     </section>
     <img class="agent-console-version-guard__showcase" :src="showcase" alt="" aria-hidden="true">

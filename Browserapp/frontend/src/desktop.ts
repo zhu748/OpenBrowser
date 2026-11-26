@@ -6,6 +6,12 @@ export interface DesktopEvent {
   action?: string;
   phase?: string;
   message?: string;
+  percent?: number;
+  received?: number;
+  total?: number;
+  speed?: number;
+  version?: string;
+  engine?: string;
   lifecycle?: { pending?: boolean };
 }
 

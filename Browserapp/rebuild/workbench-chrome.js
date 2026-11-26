@@ -1,46 +1,78 @@
-import { t as AnimatedBorder } from "./animation-border-Bx_8JoE6.js";
+/* global $t */
 import {
   D as h,
   St as ref,
   V as onMounted,
   R as onBeforeUnmount,
 } from "./runtime-core.esm-bundler-CBj16o9G.js";
-import { t as Button } from "./rx-button-DyzuUt-V.js";
 import { Z as Icon } from "./basecomponent-ClhuVxJN.js";
 import { createUsageCounter } from "./workbench-usage.js";
+
 const ipc = (method, payload = {}) =>
   globalThis.__localRequest(method, payload);
-const button = (label, icon, onClick, props = {}) =>
-  h(Button, {
-    severity: "secondary",
-    outlined: true,
-    size: "xs",
-    icon,
-    onClick,
-    "aria-label": label,
-    title: label,
-    ...props,
-  });
+
+const formatCompactCount = (value) => (value > 999 ? "999+" : String(value));
+
 export const SidebarFooter = {
   props: { collapsed: Boolean },
   __scopeId: "data-v-e0fdeed1",
   setup(props) {
     const count = ref(0);
+    const running = ref(0);
     let dispose;
-    const usage = createUsageCounter({
-      read: () => ipc("profiles:count"), update: value => { count.value = value; },
-      onError: error => console.error(error),
+
+    const totalUsage = createUsageCounter({
+      read: () => ipc("profiles:count"),
+      update: (value) => {
+        count.value = value;
+      },
+      onError: (error) => console.error(error),
     });
+
+    const runningUsage = createUsageCounter({
+      read: async () => {
+        const rows = await ipc("profiles:lifecycle-rows");
+        return {
+          count: Array.isArray(rows)
+            ? rows.filter((row) => row?.openStatus).length
+            : 0,
+        };
+      },
+      update: (value) => {
+        running.value = value;
+      },
+      onError: (error) => console.error(error),
+    });
+
+    const refreshAll = () =>
+      Promise.all([totalUsage.refresh(), runningUsage.refresh()]);
+
+    const openProfilesTab = (activeTabId) => {
+      void globalThis.__router?.push({
+        path: "/browser/list",
+        query: activeTabId ? { activeTabId } : {},
+      });
+    };
+
     onMounted(async () => {
       dispose = globalThis.ops.onEvent((event) => {
-        if (["profiles", "profile-delta", "status"].includes(event.type))
-          usage.refresh();
+        if (["profiles", "profile-delta", "status"].includes(event.type)) {
+          void refreshAll();
+        }
       });
-      await usage.refresh();
+      await refreshAll();
     });
-    onBeforeUnmount(() => { usage.dispose(); dispose?.(); });
-    return () =>
-      h(
+
+    onBeforeUnmount(() => {
+      totalUsage.dispose();
+      runningUsage.dispose();
+      dispose?.();
+    });
+
+    return () => {
+      const compactSummary = `${$t("窗口总数")} ${count.value} · ${$t("运行中")} ${running.value} · ${$t("本地窗口无限制")}`;
+
+      return h(
         "div",
         {
           class: ["rx-layout-footer", { collapsed: props.collapsed }],
@@ -48,66 +80,124 @@ export const SidebarFooter = {
         },
         [
           props.collapsed
-            ? button(
-                "窗口用量：" + count.value + "，不限量",
-                "base/rx_ic_browser",
-                () => globalThis.__router.push("/kernels"),
+            ? h(
+                "button",
+                {
+                  type: "button",
+                  class: [
+                    "local-usage-compact",
+                    { "has-running": running.value > 0 },
+                  ],
+                  "aria-label": compactSummary,
+                  title: compactSummary,
+                  onClick: () => openProfilesTab("rx_1000"),
+                },
+                [
+                  h("span", { class: "local-usage-compact-icon" }, [
+                    h(Icon, {
+                      name: "base/rx_ic_browser",
+                      size: 16,
+                    }),
+                    running.value > 0
+                      ? h("span", {
+                          class: "local-usage-compact-dot",
+                          "aria-hidden": "true",
+                        })
+                      : null,
+                  ]),
+                  h(
+                    "span",
+                    { class: "local-usage-compact-count" },
+                    formatCompactCount(count.value),
+                  ),
+                ],
               )
             : h("div", { class: "local-usage-card" }, [
-                h(
-                  "div",
-                  { class: "local-usage-title" },
-                  h("span", { class: "local-usage-badge" }, "本地"),
-                ),
-                h(
-                  "div",
-                  {
-                    class: "local-usage-progress",
-                    role: "meter",
-                    "aria-label": "窗口用量，不限量",
-                    "aria-valuenow": count.value,
-                  },
-                  Array.from({ length: 5 }, (_, i) =>
-                    h("div", { key: i, class: "local-usage-segment" }),
-                  ),
-                ),
-                h("div", { class: "local-usage-stat" }, [
-                  h("span", null, "窗口用量"),
-                  h("span", { class: "local-usage-value" }, [
-                    count.value + " / ∞ ",
-                    h(Icon, {
-                      name: "base/rx_ic_info",
-                      size: 14,
-                      color: "var(--colors-icon-icon-note)",
-                      title: "本地窗口不限量",
+                h("div", { class: "local-usage-header" }, [
+                  h("span", { class: "local-usage-workspace" }, [
+                    h("span", {
+                      class: "local-usage-workspace-dot",
+                      "aria-hidden": "true",
                     }),
+                    h(
+                      "span",
+                      { class: "local-usage-workspace-name" },
+                      $t("本地工作区"),
+                    ),
                   ]),
-                ]),
-                h(
-                  AnimatedBorder,
-                  {
-                    class: "w-full",
-                    "bg-color": "var(--pattern-sidenav-metrics-btn)",
-                    gradient: [
-                      "var(--local-usage-border-blue)",
-                      "var(--local-usage-border-orange)",
-                      "var(--local-usage-border-purple)",
-                    ],
-                  },
-                  {
-                    default: () =>
-                      h(Button, {
-                        class: "w-full",
-                        size: "xs",
-                        severity: "secondary",
-                        text: true,
-                        label: "内核升级",
-                        onClick: () => globalThis.__router.push("/kernels"),
+                  h(
+                    "span",
+                    {
+                      class: "local-usage-unlimited",
+                      title: $t("本地窗口无限制"),
+                    },
+                    [
+                      h(Icon, {
+                        name: "base/rx_ic_infinity",
+                        size: 13,
+                        "aria-hidden": "true",
                       }),
-                  },
-                ),
+                      h("span", null, $t("无限制")),
+                    ],
+                  ),
+                ]),
+                h("div", { class: "local-usage-metrics" }, [
+                  h(
+                    "button",
+                    {
+                      type: "button",
+                      class: "local-usage-metric",
+                      "data-testid": "local-usage-total",
+                      title: `${$t("窗口总数")}：${count.value}（${$t("本地窗口无限制")}）`,
+                      onClick: () => openProfilesTab("rx_1000"),
+                    },
+                    [
+                      h(
+                        "span",
+                        { class: "local-usage-metric-value" },
+                        String(count.value),
+                      ),
+                      h(
+                        "span",
+                        { class: "local-usage-metric-label" },
+                        $t("窗口总数"),
+                      ),
+                    ],
+                  ),
+                  h(
+                    "button",
+                    {
+                      type: "button",
+                      class: [
+                        "local-usage-metric",
+                        { "is-active": running.value > 0 },
+                      ],
+                      "data-testid": "local-usage-running",
+                      title: `${$t("运行中")}：${running.value}`,
+                      onClick: () => openProfilesTab("rx_1003"),
+                    },
+                    [
+                      h("span", { class: "local-usage-metric-value" }, [
+                        h("span", {
+                          class: [
+                            "local-usage-status-dot",
+                            { "is-live": running.value > 0 },
+                          ],
+                          "aria-hidden": "true",
+                        }),
+                        String(running.value),
+                      ]),
+                      h(
+                        "span",
+                        { class: "local-usage-metric-label" },
+                        $t("运行中"),
+                      ),
+                    ],
+                  ),
+                ]),
               ]),
         ],
       );
+    };
   },
 };

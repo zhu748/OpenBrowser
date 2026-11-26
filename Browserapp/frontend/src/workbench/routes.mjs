@@ -102,7 +102,7 @@ function createWorkbenchRouter({ agentShell, agentChat }) {
                 props: route => managementProps(route, { create: true }), meta: { title: '添加账号' } },
             ],
           },
-          { path: 'kernels', name: 'local-kernels', component: () => import('./kernels-route.js'), props: legacyRendererProps },
+          { path: 'kernels', name: 'local-kernels', component: () => import('./kernels-route.js'), props: legacyRendererProps, meta: { title: '内核管理' } },
           { path: 'templates', name: 'local-templates', component: () => import('./templates-route.js'), props: legacyRendererProps },
           {
             path: 'projects', name: 'projects', redirect: '/projects/list',

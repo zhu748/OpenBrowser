@@ -9,6 +9,8 @@ export interface KernelRow {
   version: string;
   source: string;
   primary?: boolean;
+  name?: string;
+  reportedVersion?: string;
 }
 
 type Version = { version: string } | string;

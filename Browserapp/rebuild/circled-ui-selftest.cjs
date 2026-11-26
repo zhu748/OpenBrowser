@@ -65,9 +65,17 @@ const repo = path.resolve(__dirname, "../..");
     await page.getByText("默认项目", { exact: true }).first().waitFor();
     await waitUntil(() =>
       page
-        .getByTestId("local-usage")
+        .getByTestId("local-usage-total")
         .innerText()
-        .then((t) => t.includes("21 / ∞")),
+        .then((t) => t.includes("21")),
+    );
+    assert.ok(
+      (await page.getByTestId("local-usage").innerText()).includes("无限制"),
+    );
+    assert.equal(
+      await page.locator(".local-usage-segment").count(),
+      0,
+      "重构后的窗口状态卡不应包含限额分段条",
     );
     for (const label of [
       "全部窗口",
@@ -75,6 +83,7 @@ const repo = path.resolve(__dirname, "../..");
       "已打开",
       "转移中",
       "回收站",
+      "内核管理",
       "AI & 自动化",
       "窗口同步",
       "AI Agent",
@@ -89,7 +98,7 @@ const repo = path.resolve(__dirname, "../..");
     for (const label of ["刷新网络定位", "更新", "通知", "刷新界面"])
       await page.getByRole("button", { name: label, exact: true }).waitFor();
     result.checks.push(
-      "截图圈出的 5 个标签、AI 分组与 5 个入口、顶部定位/更新/通知/刷新、底部不限量卡片均存在",
+      "截图圈出的 5 个标签、侧栏内核管理、AI 分组与 5 个入口、顶部定位/更新/通知/刷新、底部无限制窗口状态卡均存在",
     );
     await page.getByRole("button", { name: "更新", exact: true }).click();
     await page.getByText("客户端升级", { exact: true }).waitFor();
@@ -245,11 +254,12 @@ const repo = path.resolve(__dirname, "../..");
       "侧栏窗口同步进入原组件，模板商城、任务管理和我的模板由真实点击打开独立窗口，关闭后主界面保留",
     );
     await page
-      .getByTestId("local-usage")
-      .getByRole("button", { name: "内核升级", exact: true })
+      .locator(".rx-side")
+      .getByText("内核管理", { exact: true })
       .click();
     await page.getByLabel("内核类型", { exact: true }).waitFor();
-    result.checks.push("不限量卡片按钮进入真实本地内核管理");
+    await page.getByRole("heading", { name: "已安装内核", exact: true }).waitFor();
+    result.checks.push("侧边栏内核管理入口进入重构后的本地内核管理页面");
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.externalRequests, []);
     result.passed = true;
