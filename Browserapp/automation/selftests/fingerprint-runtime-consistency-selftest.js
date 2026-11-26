@@ -8,6 +8,8 @@ const documentBootstrap = require('../fingerprint/runtime/document-bootstrap');
 const workerBootstrap = require('../fingerprint/runtime/worker-bootstrap');
 const { LIVE_PROBE_EXPRESSION } = require('../fingerprint-debug-log');
 const { buildDocumentDeliveryProbe } = require('../fingerprint/delivery-probe');
+const { buildPortScanProtectionScript } = require('../port-scan-protection');
+const { canonicalBridgeToken } = require('../fingerprint/shared');
 const { evaluateFingerprintDelivery } = require('../request-header-rewriter');
 const { sanitizeProfile } = require('../../engine/profile-sanitizer');
 
@@ -81,6 +83,28 @@ function networkRealm(fp, worker, expose = true) {
       assert.match(failed.probeError, /未完成安装/);
     }
     assert.equal(vm.runInContext(buildDocumentDeliveryProbe(fp, { paused: true }), scope).userAgent, fp.userAgent);
+  });
+  await test('port protection preserves document verification when registered after fingerprint delivery', async () => {
+    const fp = buildFingerprint(profile('port-protection-delivery-marker'));
+    const { scope, source } = networkRealm(fp, false);
+    vm.runInContext(buildPortScanProtectionScript([]), scope);
+    const protectedToString = vm.runInContext('Function.prototype.toString', scope);
+    assert.equal((await vm.runInContext(buildDocumentDeliveryProbe(fp), scope)).userAgent, fp.userAgent);
+    const token = JSON.stringify(canonicalBridgeToken(fp));
+    assert.equal(vm.runInContext(`(() => {
+      const inspect = Function.prototype.toString;
+      const registry = new WeakMap();
+      return inspect.call(inspect, ${token}, 'sharedWorkers', registry) === registry;
+    })()`, scope), true);
+    const wrongFingerprint = buildFingerprint(profile('other-port-protection-delivery-marker'));
+    assert.match((await vm.runInContext(buildDocumentDeliveryProbe(wrongFingerprint), scope)).probeError, /未完成安装/);
+    const nativeText = 'function toString() { [native code] }';
+    assert.equal(vm.runInContext('Function.prototype.toString.call(Function.prototype.toString)', scope), nativeText);
+    const wrongToken = JSON.stringify(canonicalBridgeToken(wrongFingerprint));
+    assert.equal(vm.runInContext(`Function.prototype.toString.call(Function.prototype.toString, ${wrongToken}, 'documentInstalled')`,
+      scope), nativeText);
+    vm.runInContext(source, scope);
+    assert.equal(vm.runInContext('Function.prototype.toString', scope), protectedToString, 'registered replay stays a no-op');
   });
   await test('system timezone and real GPU are shared across document and worker configuration', async () => {
     const sourceProfile = profile('native-timezone-and-gpu', { timezoneMode: 'real', webglMeta: 'real', webgpu: 'webgl' });

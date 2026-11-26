@@ -126,6 +126,25 @@ async function main() {
     }, profile.id);
     await row().getByRole('button', { name: '同步中…', exact: true }).waitFor();await shot('native-close');
     await release('native-close');await row().getByRole('button', { name: '打开窗口', exact: true }).waitFor();
+    await app.evaluate(() => { globalThis.lifecycleTest.replaceInitialRealm = false; });
+    // The default quick-create path turns on port protection and the local welcome page.
+    await page.getByRole('button', { name: '快速创建', exact: true }).click();
+    const quickProfile = await waitUntil(() => page.evaluate(async id =>
+      (await globalThis.__localRequest('profiles:list')).find(candidate => candidate.id !== id), profile.id));
+    const quickRow = page.getByRole('row').filter({ hasText: quickProfile.windowName });
+    await quickRow.getByRole('button', { name: '打开窗口', exact: true }).click();
+    await quickRow.getByRole('button', { name: '查看', exact: true }).waitFor({ timeout: 60000 });
+    const quickLaunch = await app.evaluate(async (_host, id) => {
+      const engine = globalThis.lifecycleTest.engine;
+      const item = engine.running.get(id);
+      const cdp = process.mainModule.require('./cdp');
+      const tabs = await cdp.tabs(item.port);
+      return { portScanProtect: item.profile.privacy.portScanProtect, welcomePage: tabs.some(tab => engine.isStartPageUrl(tab.url)),
+        delivery: engine.publicRunning(id).fingerprint?.delivery };
+    }, quickProfile.id);
+    assert.deepEqual(quickLaunch, { portScanProtect: true, welcomePage: true, delivery: 'verified-document' });
+    await page.evaluate(id => globalThis.electronAPI.send('browser:batchClose', [id]), quickProfile.id);
+    await quickRow.getByRole('button', { name: '打开窗口', exact: true }).waitFor({ timeout: 60000 });
     await fs.writeFile(path.join(evidence, 'lifecycle-trace.json'), JSON.stringify(await app.evaluate(() => globalThis.lifecycleTest.trace), null, 2));
     assert.deepEqual(errors, []);
     console.log('PROFILE_LIFECYCLE_UI_SELFTEST OK (real Chromium, controlled IP and cleanup, live progress, reload recovery, failures/retry and native close)');

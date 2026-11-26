@@ -232,7 +232,15 @@ function buildPortScanProtectionScript(value, { enabled = true } = {}) {
         update(next) { active = next.enabled !== false; allow = new Set(next.allow); },
       };
       const native = nativeText.get(this);
-      return native === undefined ? previousToString.apply(this, arguments) : native;
+      if (native === undefined) return previousToString.apply(this, arguments);
+      // The fingerprint scripts send private commands to the installed
+      // toString function itself. Let the previous layer authenticate them
+      // before returning the native text for this wrapper.
+      if (this === patchedToString && typeof arguments[0] === 'string' && arguments.length > 1) {
+        const reply = previousToString.apply(this, arguments);
+        if (typeof reply !== 'string') return reply;
+      }
+      return native;
     }, 'function toString() { [native code] }');
     install(Function.prototype, 'toString', patchedToString);
   } catch (_) {}
